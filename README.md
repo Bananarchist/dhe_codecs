@@ -9,17 +9,21 @@ The project is currently being written in python, but branches in other language
 
 Files that need documentation and programming:
 - AFS
+- ARK
 - CNS
 - DAR
+- EXT
 - FCT
 - FPD
 - GMP
 - GMO *
+- IGP
 - LIM
 - PTA
 - PTG
 - PTP
 - PTX
+- SPA
 - TPL
 
 * This file format has a number of proprietary sources out there due to it being used in Final Fantasy: Dissidia. Finding a decent spec is difficult, however, and the tools are not easily extensible. There are already GMO files that these tools fail on in Sting! games, though it's indeterminate if that's an issue in the tool or if it's Sting! extending the format for their purposes as they did with the TPL file format. Hence why tools are still needed for the GMO file format.
