@@ -2,7 +2,6 @@ import sys, os, zlib
 from struct import *
 
 
-cwd = os.getcwd()
 verbose = False
 
 
@@ -21,8 +20,14 @@ class GMP_File:
 				self.fileDescriptors[i]["name"] = "f" + str(i)
 			self.fileDescriptors[i]["rl"], self.fileDescriptors[i]["offset"], self.fileDescriptors[i]["unknown"] = unpack("<III", infile.read(12))
 		self.infile = infile
-	def extractFiles(self):
-		"""Extract all files contained within the GMP file to the current working directory (obtained by os.getcwd())."""
+	def extractFiles(self, outputdirectory=os.getcwd()):
+		"""Extract all files contained within the GMP file to a folder outputdirectory.
+		
+		outputdirectory: a directory name or location for files. Containing a directory separator, it is interpretated as an absolute path."""
+		if os.path.split(outputdirectory)[0] == '':
+			outputdirectory = os.path.join(os.getcwd(), outputdirectory)
+		else:
+			outputdirectory = os.path.join(outputdirectory, self.GMPFileName + "_files")
 		if self.infile.closed:
 			try:
 				self.infile = open(self.GMPFileName)
@@ -30,7 +35,7 @@ class GMP_File:
 				print self.GMPFileName + " was closed, and we couldn't reopen it. Quitting..."
 				exit()
 		try: 
-			os.mkdir(self.GMPFileName + "_files")
+			os.mkdirs(outputdirectory)
 		except:
 			pass
 		for i in xrange(self.fileCount):
@@ -51,23 +56,37 @@ class GMP_File:
 
 			
 if __name__=="__main__":
+	usage = "Usage:\t[python] " + sys.argv[0] + " [options] file.gmp\n\nOptions: \n\tO, o directory: output files to directory. Values containing separators will be interpreted as absolute paths.\n\tV, v: verbose, output some extra information"
 	if len(sys.argv) < 2:
-		print "Usage:\t" + sys.argv[0] + " gmpfile [V|v] \n\nOptions: \n\tV, v: verbose, output some extra information"
+		print usage
 		exit()
 	else:
-		try:
-			infile = open(sys.argv[1], "rb")
-		except: 
-			"We were unable to open the file " + sys.argv[1]
+		od = ""
+		filegiven = False
+		for i in xrange(len(sys.argv[2:])):
+			if sys.argv[i] in ['o', 'O']:
+				od = sys.argv[i+1]
+				i += 1
+			elif sys.argv[i] in ['v', 'V']:
+				verbose = True
+			else:
+				try:
+					infile = open(sys.argv[i], "rb")
+					filegiven = True
+				except: 
+					"Unable to open the file " + sys.argv[i]
+					exit()
+		if not filegiven:
+			print usage
 			exit()
-		if len(sys.argv) > 2:
-			if sys.argv[2] == "v" or sys.argv[2] == "V":
-				verbose = True #this program ignores all other arguments
 	gmp = GMP_File(infile)
 	if verbose:
 		print gmp.info()
 		print "Extracting files...\n"
-	gmp.extractFiles()
+	if od != "":
+		gmp.extractFiles(od)
+	else:
+		gmp.extractFiles()
 	infile.close()
 				
 		
