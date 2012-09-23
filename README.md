@@ -32,3 +32,4 @@ Files that need documentation and programming:
 Some branch ideas: 
 - Encoding file formats. Take a PNG for example and parse it into a TPL file. Could be used to make custom games using the Sting! game engines.
 - GUI. Could be used to preview, extract individual sprites, files and textures, probably the best way to go about making it possible to encode the file formats.
+- Filetype detection. It would be nice if the classes had methods for determining whether a file was of one type or another. With some files it will be easier than others.
