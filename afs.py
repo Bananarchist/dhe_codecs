@@ -4,12 +4,11 @@ from struct import *
 
 class AFS_File:
     def __init__(self, infile):
-        self.AFSFileName = infile.name
-        infile.seek(0)
-        identifier, self.fileCount = unpack("<II", infile.read(8))
-        if identifier != 0x41465300:
-            print "This doesn't seem to be an AFS file"
-            exit()
+        self.AFSFileName = infile.name.split(os.sep)[-1]
+        if not AFS_File.isAFSFile(infile):
+            pass #we need to throw some sort of agreed upon error here
+        infile.seek(4)
+        self.fileCount = unpack("<I", infile.read(4))[0]
         self.fileInfo = []
         # get each file's offset and size
         for i in xrange(self.fileCount):
@@ -24,27 +23,31 @@ class AFS_File:
     def extractFiles(self, outputdirectory=os.getcwd(), extrainfo=False):
         """Extracts all files within to outputdirectory.
         
-        outputdirectory: If it contains a path separator, it will be interpreted as an absolute path
+        outputdirectory: if not provided, will create new folder in current working directory
         extrainfo: prints out status while processing file"""
-        # %(do)08x_%(fn)s
+        if outputdirectory == os.getcwd(): outputdirectory = self.AFSFileName.split(".")[0] + "_files"
+        try: os.mkdir(outputdirectory)
+        except: pass # chances are it failed because it exists and we tried creating it
         for file in self.fileInfo:
-            fn = "%08x_%s", (file["dataRunLength"], file["fileName"])
-            
-        pass
+            self.infile.seek(file["dataOffset"])
+            fn = "%08X_%s" % (file["dataOffset"], file["fileName"])
+            with open(os.path.join(outputdirectory, fn), "wb") as oot:
+                data = self.infile.read(file["dataRunLength"])
+                oot.write(data)
+                if extrainfo:
+                    print "Outputting %s as %s to %s" % (file["fileName"], fn, outputdirectory) 
     def info(self):
         """Prints out info about the AFS file and contained files"""
-        infostr = "AFS Container \"%s\", %i files\n\n                        Filename\t      Size\t    Offset\t        U1\t        U2\t        U3\t        U4" % (self.AFSFileName, sekf.fileCount)
+        infostr = "AFS Container \"%s\", %i files\n\n                        Filename\t      Size\t    Offset\t        U1\t        U2\t        U3\t        U4" % (self.AFSFileName, self.fileCount)
         for file in self.fileInfo:
-            infostr = "%s\n%32s\t%#10i\t%0#10x\t%0#10x\t%0#10x\t%0#10x\t%0#10x" % (infostr, file["fileName"], file["dataRunlength"], file["dataOffset"], file["u"][0], file["u"][1], file["u"][2], file["u"][3])
+            infostr = "%s\n%32s\t%#10i\t%0#10X\t%0#10X\t%0#10X\t%0#10X\t%0#10X" % (infostr, file["fileName"], file["dataRunLength"], file["dataOffset"], file["u"][0], file["u"][1], file["u"][2], file["u"][3])
         print infostr
+    @staticmethod
     def isAFSFile(infile):
-        """Class method for detecting if the infile is an AFS file or byte list"""
-        identifier = 0
-        if type(infile) == list:
-            identifier = (infile[0] << 24) | (infile[1] << 16) | (infile[2] << 8) | (infile[3])
-        elif type(infile) == file:
-            identifier = unpack("<I", infile.read(4))
-        if identifier == 0x41465300:
+        """Class method for detecting if infile is an AFS file"""
+        infile.seek(0)
+        identifier = unpack("BBBB", infile.read(4))
+        if identifier == (0x41, 0x46, 0x53, 0x00):
             return True
         return False
 
