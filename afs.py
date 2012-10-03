@@ -3,7 +3,11 @@ from struct import *
 
 
 class AFS_File:
+    """Class representing an AFS container file object."""
     def __init__(self, infile):
+        """Takes file object, returns AFS_File object.
+
+        infile: file object, usually obtained via open command. Must be at least "rb" mode"""
         self.AFSFileName = infile.name.split(os.sep)[-1]
         if not AFS_File.isAFSFile(infile):
             pass #we need to throw some sort of agreed upon error here
@@ -53,4 +57,7 @@ class AFS_File:
 
 
 if __name__=="__main__":
-    pass
+    usage = "Usage: [python] %s [mode] [options] inputfile\n\nCommands:\n\tE, e: default beahvior, extracts all files in AFS\n\tI, i: print information and exit\n\tO, o: output files to specific directory (o directory)\n\tV, v: output extra information, only meaningful in extract mode (using e flag)\n" % sys.argv[0]
+    if len(sys.argv) < 2:
+        print usage
+        exit
