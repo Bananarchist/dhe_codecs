@@ -27,24 +27,37 @@ class AFS_File:
     def extractFiles(self, outputdirectory=os.getcwd(), extrainfo=False):
         """Extracts all files within to outputdirectory.
         
-        outputdirectory: if not provided, will create new folder in current working directory
-        extrainfo: prints out status while processing file"""
+        outputdirectory: if not provided, will create new folder in current working directory.
+        extrainfo: prints out status while processing file."""
         if outputdirectory == os.getcwd(): outputdirectory = self.AFSFileName.split(".")[0] + "_files"
         try: os.mkdir(outputdirectory)
         except: pass # chances are it failed because it exists and we tried creating it
-        for file in self.fileInfo:
-            self.infile.seek(file["dataOffset"])
-            fn = "%08X_%s" % (file["dataOffset"], file["fileName"])
-            with open(os.path.join(outputdirectory, fn), "wb") as oot:
-                data = self.infile.read(file["dataRunLength"])
-                oot.write(data)
-                if extrainfo:
-                    print "Outputting %s as %s to %s" % (file["fileName"], fn, outputdirectory) 
+        for i in xrange(self.fileCount):
+            self.extractFile(i, outputdirectory=outputdirectory)
+            if extrainfo:
+                print "Outputting %s as %08X_%s to %s" % (self.fileInfo[i]["fileName"], self.fileInfo[i]["dataOffset"], self.fileInfo[i]["fileName"], outputdirectory) 
+    def extractFile(self, fileindex, outputdirectory=os.getcwd(), initialindex=0):
+        """Extracts a single file from AFS.
+        
+        fileindex: index number of specific file to extract.
+        ourputdirectory: current working directory by default.
+        initialindex: Default zero, if default, 0 is first index, 1 is second, etc."""
+        if fileindex-initialindex > self.fileCount or fileindex-initialindex < 0:
+            return #this is an out-of-bounds error and should probably be handled better
+        try: os.mkdir(outputdirectory)
+        except: pass # fail in silence
+        file = self.fileInfo[fileindex - initialindex]
+        self.infile.seek(file["dataOffset"])
+        fn = "%08X_%s" % (file["dataOffset"], file["fileName"])
+        with open(os.path.join(outputdirectory, fn), "wb") as oot:
+            data = self.infile.read(file["dataRunLength"])
+            oot.write(data)
     def info(self):
         """Prints out info about the AFS file and contained files"""
-        infostr = "AFS Container \"%s\", %i files\n\n                        Filename\t      Size\t    Offset\t        U1\t        U2\t        U3\t        U4" % (self.AFSFileName, self.fileCount)
-        for file in self.fileInfo:
-            infostr = "%s\n%32s\t%#10i\t%0#10X\t%0#10X\t%0#10X\t%0#10X\t%0#10X" % (infostr, file["fileName"], file["dataRunLength"], file["dataOffset"], file["u"][0], file["u"][1], file["u"][2], file["u"][3])
+        infostr = "AFS Container \"%s\", %i files\n\n   Index\t                        Filename\t      Size\t    Offset\t        U1\t        U2\t        U3\t        U4" % (self.AFSFileName, self.fileCount)
+        for i in xrange(self.fileCount):
+            file = self.fileInfo[i]
+            infostr = "%s\n%#8i\t%32s\t%#10i\t%0#10X\t%0#10X\t%0#10X\t%0#10X\t%0#10X" % (infostr, i, file["fileName"], file["dataRunLength"], file["dataOffset"], file["u"][0], file["u"][1], file["u"][2], file["u"][3])
         print infostr
     @staticmethod
     def isAFSFile(infile):
