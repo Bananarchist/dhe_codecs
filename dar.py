@@ -37,10 +37,35 @@ class DAR_File:
             try: self.outfile = open(kwargs.get("create"), "wb")
             except: pass
             self.infile = None
-    def extractFiles(self):
-        pass
-    def extractFile(self, fileindex, initialindex=None):
-        pass
+    def extractFiles(self, directory=None):
+        if not directory:
+            directory = self.DARFileName
+        try:
+            os.mkdir(directory)
+        except OSError:
+            pass #probably because the directory exists already
+        for i in xrange(self.fileCount):
+            self.extractFile(i, 0, directory)
+    def extractFile(self, fileindex, initialindex=0, directory=""):
+        fi = fileindex - initialindex
+        self.infile.seek(self.fileInfo[fi]["fileOffset"])
+        runlength = self.fileInfo[fi]["fileSize"]
+        compressed = False
+        if self.fileInfo[fi]["compressedSize"] != 0: compressed = True
+        fn = os.path.join(directory, "%08X_%s" % (self.fileInfo[fi]["fileOffset"], self.fileInfo[fi]["fileName"]))
+        ofile = open(fn, "wb")
+        if compressed:
+            try:
+                data = zlib.decompress(self.infile.read(self.fileInfo[fi]["compressedSize"]))
+            except: 
+                print "File at index %i (from initial index %i) failed to decompress despite appearing to be compressed. Outputting (compressed?) data to %s" % (fileindex, initialindex, fn)
+                self.infile.seek(self.fileInfo[fi]["fileOffset"])
+                data = self.infile.read(self.fileInfo[fi]["compressedSize"])
+        else:
+            data = self.infile.read(self.fileInfo[fi]["fileSize"])
+
+        ofile.write(data)
+        ofile.close()
     def addFile(self, *args, **kwargs):
         pass # DARS are probably the easiest to create with the least unknowns floating about them
     def info(self):
