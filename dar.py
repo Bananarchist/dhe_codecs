@@ -21,12 +21,12 @@ class DAR_File:
             self.fileCount, self.fileDataOffset, self.fileNamesOffset, self.fileInfoOffset = unpack("<IIII", self.infile.read(16))
             self.fileInfo = []
             for i in xrange(self.fileCount):
-                infile.seek(self.fileInfoOffset + (16 * i))
-                self.fileInfo[i] = {}
+                self.infile.seek(self.fileInfoOffset + (16 * i))
+                self.fileInfo.append({})
                 filenameOffset, self.fileInfo[i]["compressedSize"], self.fileInfo[i]["fileSize"], self.fileInfo[i]["fileOffset"] = unpack("<IIII", self.infile.read(16))
                 self.infile.seek(filenameOffset)
                 if self.fileInfo[i]["compressedSize"] != 0: self.fileInfo[i]["compressed"] = True
-                else self.fileInfo[i]["compressed"] = False
+                else: self.fileInfo[i]["compressed"] = False
                 # if anyone knows how to read inderterminate length, null-terminated strings from a binary file better than this, please change it!
                 # possible - read all the strings in one go and split the giant string at each \x00
                 self.fileInfo[i]["fileName"] = ""
@@ -49,11 +49,13 @@ class DAR_File:
         Keyword Arguments:
         directory: the directory to output the files too. If it doesn't exist, it will be created. Defaults to the DAR file's name."""
         if not directory:
-            directory = self.DARFileName
-        try:
-            os.mkdir(directory)
-        except OSError:
-            pass #probably because the directory exists already
+            directory = self.DARFileName.split('.')[0]
+        if not os.access(directory, os.F_OK): 
+            try:
+                os.mkdir(directory)
+            except OSError:
+                print "Couldn't create directory"
+                return
         for i in xrange(self.fileCount):
             self.extractFile(i, 0, directory)
     def extractFile(self, fileindex, initialindex=0, directory=""):
@@ -68,7 +70,17 @@ class DAR_File:
         # does this default to the CWD or the directory in which the DAR is stored - experiments are necessary!
         fi = fileindex - initialindex
         self.infile.seek(self.fileInfo[fi]["fileOffset"])
-        fn = os.path.join(directory, "%08X_%s" % (self.fileInfo[fi]["fileOffset"], self.fileInfo[fi]["fileName"]))
+        fa = self.fileInfo[fi]["fileName"].split('/')
+        fn = directory
+        if len(fa) > 1:
+            for d in fa[:-1]:
+                fn = os.path.join(fn, d)
+                if not os.access(fn, os.F_OK): 
+                    try:
+                        os.mkdir(fn)
+                    except OSError:
+                        pass #dir probably exists, but we should have a better failing mechanism than this
+        fn = os.path.join(fn, "%08X_%s" % (self.fileInfo[fi]["fileOffset"], fa[-1]))
         ofile = open(fn, "wb")
         if self.fileInfo[fi]["compressed"]:
             try:
@@ -81,15 +93,17 @@ class DAR_File:
             data = self.infile.read(self.fileInfo[fi]["fileSize"])
         ofile.write(data)
         ofile.close()
+    def addFiles(self, *args, **kwargs):
+        pass #will likely rely on addFile() like the extraction methods do
     def addFile(self, *args, **kwargs):
         pass # DARS are probably the easiest to create with the least unknowns floating about them
     def info(self):
-        """Formats a table of information on the DARFile
-
-        Returns formatted string of DARFile information."""
+        """info() -> string
+        
+        Returns formatted string of information on DAR_File object."""
         l = self.longestFileName - 8
         if l < 8: l = 8
-        infostr = "DAR Container: \"%s\", %i files\nFile Data: %0#10X, File Descriptors: %0#10X, Filenames: %0#10X\n\n   Index\t%sFilename\tCompressed\tStored Size\t Full Size\t    Offset" % (self.DARFileName, self.fileCount, self.fileDataOffset, self.fileInfoOffset, self.fileNamesoffset, " " * l)
+        infostr = "DAR Container: \"%s\", %i files\nFile Data: %0#10X, File Descriptors: %0#10X, Filenames: %0#10X\n\n   Index\t%sFilename\tCompressed\tStored Size\t Full Size\t    Offset" % (self.DARFileName, self.fileCount, self.fileDataOffset, self.fileInfoOffset, self.fileNamesOffset, " " * l)
         for i in xrange(self.fileCount):
             file = self.fileInfo[i]
             if file["compressed"]: ss = file["compressedSize"]
