@@ -1,3 +1,8 @@
+****
+This project is no longer being maintained, unless someone would like to take up the cause.
+****
+
+
 dhe_codecs
 ==========
 
