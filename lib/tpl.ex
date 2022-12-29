@@ -53,10 +53,11 @@ defmodule Tpl do
   end
 
   def parse_texture_data_header(data) do
+    # there are actually 8bytes more of unknown data assoc with textures
     <<
       height::little-integer-size(16),
-      width::little-integer-size(16),
       unknown::little-integer-size(16),
+      width::little-integer-size(16),
       format::little-integer-size(16),
       offset::little-integer-size(32)
     >> = data |> :erlang.list_to_binary
@@ -100,6 +101,7 @@ defmodule Tpl do
   end
 
   def as_png(stream, info, file_name) do
+    density = if info.texture.format == 4 do 2 else 1 end
     palette_data =
       stream
       |> Stream.drop(info.palette.offset)
@@ -110,17 +112,21 @@ defmodule Tpl do
     pixel_data =
       stream
       |> Stream.drop(info.texture.offset)
+      |> Stream.take(Integer.floor_div(info.texture.width * info.texture.height, density))
       |> nibble(info.texture.format)
-      |> Stream.take(info.texture.width * info.texture.height)
+      |> Stream.chunk_every(0x10 * density)
+      |> Stream.chunk_every(0x8)
+      |> Stream.chunk_every(Integer.floor_div(info.texture.width, 0x10 * density))
+      |> Stream.map(fn x -> Stream.zip_with(x, &Function.identity/1) |> Enum.to_list end)
       |> Enum.to_list()
       |> List.flatten()
       |> :erlang.list_to_binary
 
     case Png.make_png()
-         |> Png.with_width(info.texture.width)
+      # Why does this keep happening
+         |> Png.with_width(info.texture.width - 1)
          |> Png.with_height(info.texture.height)
          |> Png.with_color_type(palette_data)
-         |> Png.with_bgra()
          |> Png.execute(pixel_data) do
       {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
       {:error, err} -> IO.puts(err)
