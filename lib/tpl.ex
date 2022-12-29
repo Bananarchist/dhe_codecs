@@ -1,5 +1,7 @@
 defmodule Tpl do
-  # format - 0x04 = nibble pixels, 0x05 = byte pixels, 0xFFFF = sprites or something
+  # format - 0x04 = nibble pixels, 0x05 = byte pixels, 0xFFFF = sprite assembly data
+  import Bitwise
+
 
   def parse_tpl(stream) do
     <<
@@ -15,21 +17,54 @@ defmodule Tpl do
   end
 
   def parse_textures(stream, texture_header_offset, texture_count) do
+    textures =
+      stream
+        |> Stream.drop(texture_header_offset)
+        |> Stream.take(0x08 * texture_count)
+        |> Stream.chunk_every(0x08)
+        |> Stream.map(fn data ->
+          <<
+            tdo::little-integer-size(32),
+            pdo::little-integer-size(32)
+          >> = data |> :erlang.list_to_binary
+          if pdo == 0 do
+            %{
+              texture: parse_texture_data(stream, tdo)
+            }
+          else
+            %{
+              texture: parse_texture_data(stream, tdo),
+              palette: parse_palette_data(stream, pdo)
+            }
+          end
+        end)
+        |> Enum.to_list
+    if Enum.any?(textures, &(&1.texture.format == 0xFFFF)) do
+      # go fetch sprite data
+      # reformat texture map
+      # get the texture without 0xFFFF format
+      # attach it as a sub object
+      #Enum.split_with(textures, &(&1.texture.format == 0xFFFF))
+      #|> parse_sprite_data(stream)
+      Enum.filter(textures, &(&1.texture.format != 0xFFFF))
+    else
+      textures
+    end
+  end
+
+  def parse_sprite_data({sprites, [texture | []]}, stream), do: parse_sprite_data(sprites, texture, stream)
+  def parse_sprite_data({sprites, [texture | others]}, stream) do
+    IO.puts("Encountered TPL with sprite data and multiple textures! Proceeding as if other textures do not exist...")
+    parse_sprite_data(sprites, texture, stream)
+  end
+  def parse_sprite_data(sprites, texture, stream) when is_list(sprites) do
+    #Enum.map(sprites, fn sprite ->
+    #  stream
+    #  |> Stream.drop(sprite.texture.offset)
+    #  |> Stream.
     stream
-    |> Stream.drop(texture_header_offset)
-    |> Stream.take(0x08 * texture_count)
-    |> Stream.chunk_every(0x08)
-    |> Stream.map(fn data ->
-      <<
-        tdo::little-integer-size(32),
-        pdo::little-integer-size(32)
-      >> = data |> :erlang.list_to_binary
-      %{
-        texture: parse_texture_data(stream, tdo),
-        palette: parse_palette_data(stream, pdo)
-      }
-    end)
-    |> Enum.to_list
+
+    
   end
 
   def parse_texture_data(stream, texture_data_offset) do
@@ -102,6 +137,9 @@ defmodule Tpl do
 
   def as_png(stream, info, file_name) do
     density = if info.texture.format == 4 do 2 else 1 end
+    density_shift = density - 1
+    total_bytes = info.palette.offset - info.texture.offset # this assumes palettes always succeed textures...!
+    height = Integer.floor_div(total_bytes, info.texture.width) >>> density_shift
     palette_data =
       stream
       |> Stream.drop(info.palette.offset)
@@ -112,37 +150,37 @@ defmodule Tpl do
     pixel_data =
       stream
       |> Stream.drop(info.texture.offset)
-      |> Stream.take(Integer.floor_div(info.texture.width * info.texture.height, density))
-      |> nibble(info.texture.format)
-      |> Stream.chunk_every(0x10 * density)
+      |> Stream.take(total_bytes)
+      |> Stream.chunk_every(0x10)
       |> Stream.chunk_every(0x8)
-      |> Stream.chunk_every(Integer.floor_div(info.texture.width, 0x10 * density))
+      |> Stream.chunk_every(Integer.floor_div(info.texture.width, 0x10))# >>> density_shift))
       |> Stream.map(fn x -> Stream.zip_with(x, &Function.identity/1) |> Enum.to_list end)
       |> Enum.to_list()
       |> List.flatten()
+      |> nibble(info.texture.format)
       |> :erlang.list_to_binary
 
     case Png.make_png()
       # Why does this keep happening
          |> Png.with_width(info.texture.width - 1)
-         |> Png.with_height(info.texture.height)
+         |> Png.with_height(height) #info.texture.height)
          |> Png.with_color_type(palette_data)
          |> Png.execute(pixel_data) do
       {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
       {:error, err} -> IO.puts(err)
     end
   end
-  def nibble(stream, indexing) do
+  def nibble(enum, indexing) do
     if indexing == 4 do
-      Stream.map(stream, fn byte -> 
+      Enum.map(enum, fn byte -> 
         << 
           nib2::little-integer-size(4),
           nib1::little-integer-size(4)
         >> = byte
-        [ nib1, nib2 ]
+        << nib1, nib2 >>
       end)
     else
-      stream
+      enum
     end
   end
 end

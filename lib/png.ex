@@ -79,14 +79,13 @@ defmodule Png do
   end
 
   def data_chunk(pixel_data) do
-    #IO.puts(pixel_data |> to_charlist)
     z = :zlib.open()
     :zlib.deflateInit(z)
-    compressed = :zlib.deflate(z, pixel_data)
+    compressed = :zlib.deflate(z, pixel_data, :finish)
     #:zlib.deflateEnd(z)
     :zlib.close(z)
     #compressed = :zlib.zip(pixel_data)
-    data = compressed |> List.flatten() |> Enum.reduce(fn x, acc -> acc <> x end)
+    data = compressed |> List.flatten() |> :erlang.list_to_binary
 
     <<byte_size(data)::size(32)>> <>
       ((@idat_tag <>
