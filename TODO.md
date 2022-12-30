@@ -1,5 +1,10 @@
 # To do
-A list of things that need to be done; consider opening a pull request with one of this fixes/features!
+A list of things that need to be done; consider opening a pull request with one of these fixes/features!
+
+## General
+- Storage/production is implemented for few if any of the file formats, eg, archiving files into an AFS
+- Extraction for some of the containers is slow; in some cases it may just be better to load them into memory, perhaps deciding based on `File.stat`
+  - This also could be a matter of read size, but this too will require some cleverness
 
 ## Lim.ex
 - Does not handle multiple palettes
@@ -10,6 +15,7 @@ A list of things that need to be done; consider opening a pull request with one 
 
 ## Afs.ex
 - Extraction is slow af
-- Storage not implemented
 
+## Ptx.ex
+- Works about as well as Tpl.ex, _if_ it works that well
 
