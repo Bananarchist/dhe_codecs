@@ -15,8 +15,8 @@ defmodule Lim do
       |> (&(&1.image_y + 16)).()
     width = 
       assemblies
-      |> Enum.max_by(&(&1.image_x + (&1.read_length <<< 4)))
-      |> (&(&1.image_x + (&1.read_length <<< 4))).()
+      |> Enum.max_by(&(&1.image_x + in_pixels(&1.read_length)))
+      |> (&(&1.image_x + in_pixels(&1.read_length))).()
 
     %{
       offsets: offsets,
@@ -195,10 +195,13 @@ defmodule Lim do
       |> :erlang.list_to_binary
   end
 
-  def aa_to_png(), do: lim_to_png("output/bustup/bu_m_30.lim")
-  def lim_to_png(), do: lim_to_png("output/bustup/0308.lim")
-  def lim_to_png(filename) do
-    stream = File.stream!(filename, [], 1)
+  def lim_to_png(file_name) do
+    dir = Path.dirname(file_name)
+    base = Path.basename(file_name, ".lim")
+    lim_to_png(file_name, Path.join([dir, base <> ".png"]))
+  end
+  def lim_to_png(file_name, output_file_name) do
+    stream = File.stream!(file_name, [], 1)
     info = parse_lim(stream)
     pixel_data = pixel_data(stream, info)
 
@@ -208,7 +211,7 @@ defmodule Lim do
       |> Png.with_color_type(info.palette_data.palettes |> Enum.to_list()) # need to actually handle multiple palettes someday~
       |> Png.execute(pixel_data)
         do
-          {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
+          {:ok, png_data} -> File.write(output_file_name, png_data <> <<>>)
           {:error, err} -> IO.puts(err)
         end
     
@@ -285,14 +288,6 @@ defmodule Lim do
   def assembly_rows(blocked_tile_stream, info) do
     info.assemblies
     |> Enum.map(&Map.put(&1, :tiles, assembly_tiles(blocked_tile_stream, info, &1)))
-  end
-
-  def dev_shortcut(filename) do
-    stream = File.stream!(filename, [], 1)
-    info = parse_lim(stream)
-    bs = chunk_pixel_data(stream, info)
-    ass_rows = assembly_rows(bs, info)
-    {info, bs, ass_rows}
   end
     
   def assembly_tiles(blocked_tile_stream, _info, assembly) do
