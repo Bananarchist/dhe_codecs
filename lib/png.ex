@@ -28,6 +28,13 @@ defmodule Png do
 
   def with_color_type(opts, color_type), do: %{opts | color_type: color_type}
 
+  def no_filter(width, pixel_data) do
+    pixel_data
+    |> :binary.bin_to_list
+    |> Enum.map_every(width, fn x -> <<0, x>> end)
+    |> :erlang.list_to_binary
+  end
+
   def execute(opts, pixel_data) do
     execute_options(opts.width, opts.height, opts.bit_depth, opts.color_type, pixel_data, opts.bgra)
   end
@@ -38,7 +45,7 @@ defmodule Png do
      magic_number() <>
        header_chunk(width, height, bit_depth, 3) <>
        plte_chunk(palette, bgra) <>
-       data_chunk(pixel_data) <>
+       data_chunk(pixel_data, &no_filter(width, &1)) <>
        end_chunk()}
   end
 
@@ -48,7 +55,7 @@ defmodule Png do
     {:ok,
      magic_number() <>
        header_chunk(width, height, bit_depth, color_type) <>
-       data_chunk(pixel_data) <>
+       data_chunk(pixel_data, &no_filter(width, &1)) <>
        end_chunk()}
   end
 
@@ -78,10 +85,11 @@ defmodule Png do
        |> crc_of_chunk())
   end
 
-  def data_chunk(pixel_data) do
+  def data_chunk(pixel_data, filter_method) do
     z = :zlib.open()
-    :zlib.deflateInit(z)
-    compressed = :zlib.deflate(z, pixel_data, :finish)
+    #:zlib.deflateInit(z)
+    :zlib.deflateInit(z, :default, :deflated, 14, 8, :default)
+    compressed = :zlib.deflate(z, filter_method.(pixel_data), :finish)
     #:zlib.deflateEnd(z)
     :zlib.close(z)
     #compressed = :zlib.zip(pixel_data)

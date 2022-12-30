@@ -250,8 +250,7 @@ defmodule Lim do
                |> stream_of_zeros
                |> Enum.to_list
                |> :erlang.list_to_binary
-    # I don't understand this +1
-    pad_right = remainder + 1
+    pad_right = remainder
                 |> stream_of_zeros
                 |> Enum.to_list
                 |> :erlang.list_to_binary

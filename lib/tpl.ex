@@ -3,6 +3,9 @@ defmodule Tpl do
   import Bitwise
 
 
+  def info(file_name) do
+    parse_tpl(File.stream!(file_name, [], 1))
+  end
   def parse_tpl(stream) do
     <<
       texture_count::little-integer-size(32),
@@ -123,7 +126,7 @@ defmodule Tpl do
   def as_png(input_file_name), do: as_png(input_file_name, Path.basename(input_file_name, ".tpl"))
 
   def as_png(input_file_name, base_output_file_name) do
-    output_file_name = Path.join([Path.dirname(input_file_name), base_output_file_name])
+    output_file_name = base_output_file_name
     stream = File.stream!(input_file_name, [], 1)
 
     stream
@@ -139,7 +142,7 @@ defmodule Tpl do
     density = if info.texture.format == 4 do 2 else 1 end
     density_shift = density - 1
     total_bytes = info.palette.offset - info.texture.offset # this assumes palettes always succeed textures...!
-    height = Integer.floor_div(total_bytes, info.texture.width) >>> density_shift
+    height = Integer.floor_div(total_bytes, info.texture.width <<< density_shift)
     palette_data =
       stream
       |> Stream.drop(info.palette.offset)
@@ -151,19 +154,20 @@ defmodule Tpl do
       stream
       |> Stream.drop(info.texture.offset)
       |> Stream.take(total_bytes)
-      |> Stream.chunk_every(0x10)
-      |> Stream.chunk_every(0x8)
-      |> Stream.chunk_every(Integer.floor_div(info.texture.width, 0x10))# >>> density_shift))
-      |> Stream.map(fn x -> Stream.zip_with(x, &Function.identity/1) |> Enum.to_list end)
+      |> Enum.chunk_every(0x10)
+      |> Enum.chunk_every(0x8)
+      |> Enum.chunk_every(info.texture.width >>> (4 >>> density_shift))
+      |> Enum.map(fn x -> Enum.zip_with(x, &Function.identity/1) end)
       |> Enum.to_list()
       |> List.flatten()
-      |> nibble(info.texture.format)
       |> :erlang.list_to_binary
 
+    IO.inspect(byte_size(pixel_data))
+
     case Png.make_png()
-      # Why does this keep happening
-         |> Png.with_width(info.texture.width - 1)
-         |> Png.with_height(height) #info.texture.height)
+         |> Png.with_width(info.texture.width)
+         |> Png.with_height(height) 
+         |> Png.with_bit_depth(if info.texture.format == 4 do 4 else 8 end)
          |> Png.with_color_type(palette_data)
          |> Png.execute(pixel_data) do
       {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
