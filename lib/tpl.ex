@@ -129,8 +129,8 @@ defmodule Tpl do
     <<
       hShift::little-integer-size(8),
       vShift::little-integer-size(8),
-      row::little-integer-size(6),
-      column::little-integer-size(10),
+      x::little-integer-size(10),
+      y::little-integer-size(6),
       width::little-integer-size(8),
       height::little-integer-size(8)
     >> = data |> :erlang.list_to_binary
@@ -138,8 +138,8 @@ defmodule Tpl do
     %{
       hShift: hShift,
       vShift: vShift <<< 1,
-      row: row,
-      column: column,
+      y: y,
+      x: x,
       width: width,
       height: height >>> 2
     }
@@ -207,7 +207,7 @@ defmodule Tpl do
 
     stream
     |> parse_tpl()
-    |> Enum.filter(&(Map.has_key?(&1, :palette)))
+    |> Enum.map(fn t -> if Map.has_key?(t, :olde) do t.texture else t end end)
     |> Enum.with_index()
     |> Enum.each(fn {texture, idx} ->
       as_png(stream, texture, output_file_name <> Integer.to_string(idx) <> ".png")
