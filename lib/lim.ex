@@ -1,4 +1,5 @@
 defmodule Lim do
+  @behaviour PngProducer
   import Bitwise
   @moduledoc """
   A module for faciliating working with LIM graphic files
@@ -193,6 +194,11 @@ defmodule Lim do
       |> merge_pixelated_assemblies_on_image_y(info)
       |> List.flatten
       |> :erlang.list_to_binary
+  end
+
+  @impl PngProducer
+  def to_png(file_name) do
+    lim_to_png(file_name)
   end
 
   def lim_to_png(file_name) do
