@@ -59,7 +59,7 @@ defmodule Png do
        end_chunk()}
   end
 
-  def execute_options(_width, _height, _bit_depth, _color_type, _palette, _pixel_data, _bgra) do
+  def execute_options(_width, _height, _bit_depth, _color_type, _pixel_data, _bgra) do
     {:error, "Options invalid"}
   end
 
