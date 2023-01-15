@@ -217,8 +217,13 @@ defmodule Lim do
       |> Png.with_color_type(info.palette_data.palettes |> Enum.to_list()) # need to actually handle multiple palettes someday~
       |> Png.execute(pixel_data)
         do
-          {:ok, png_data} -> File.write(output_file_name, png_data <> <<>>)
-          {:error, err} -> IO.puts(err)
+          {:ok, png_data} -> 
+            case File.write(output_file_name, png_data <> <<>>) do
+              :ok -> {:ok, png_data}
+              err -> err
+            end
+          {:error, err} -> 
+            {:error, err}
         end
     
   end
