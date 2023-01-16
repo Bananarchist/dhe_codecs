@@ -3,99 +3,108 @@ defmodule Tpl do
   @behaviour PngProducer
   import Bitwise
 
+  def new_palette(colors, mode, offset) do
+    {:palette,
+    %{ colors: colors, mode: mode, offset: offset }
+    }
+  end
+
+  def new_texture(format, offset, unknown, width, height) do
+    {:texture,
+    %{ format: format, height: height, offset: offset, unknown: unknown, width: width }
+    }
+  end
+
+  def new_sprite(bytes, assembly_count, offset, unknown, width, height) do
+    new_sprite(bytes, assembly_count, offset, unknown, width, height, [])
+  end
+  def new_sprite(bytes, assembly_count, offset, unknown, width, height, assemblies) do
+    {:sprite,
+    %{ bytes: Integer.to_string(bytes, 16) |> (&("0x" <> &1)).(), count: assembly_count, offset: offset, unknown: Integer.to_string(unknown, 16) |> (&("0x" <> &1)).(), width: width, height: height, assemblies: assemblies}
+    }
+  end
+
+  def new_assembly(dest_x, dest_y, src_x, src_y, width, height) do
+    %{ dest_x: dest_x, dest_y: dest_y, src_x: src_x, src_y: src_y, width: width, height: height }
+  end
+
+  def with_texture(info, texture) do
+    if Keyword.has_key?(info, :texture) && Keyword.has_key?(info, :sprite) do
+      IO.puts("Multiple textures with assembly flags not yet supported. Secondary textures will be ignored.")
+    end
+    info ++ [texture]
+  end
+
+  def with_palette(info, palette) do
+    if Keyword.has_key?(info, :palette) do
+      IO.puts("Multiple palettes not yet supported for export.")
+    end
+    info ++ [palette]
+  end
+
+  def with_sprite(info, sprite) do
+    info ++ [sprite]
+    # Map.update(info, :sprite, [sprite], fn s -> s ++ [sprite] end)
+  end
+
+  def texture(info), do: Keyword.get(info, :texture)
+  def palette(info), do: Keyword.get(info, :palette)
+  def sprites(info), do: Keyword.get(info, :sprite)
+  def texture_bytes(info), do: palette(info).offset - texture(info).offset
+
   def info(file_name) do
     parse_tpl(File.stream!(file_name, [], 1))
   end
 
   def parse_tpl(stream) do
     <<
-      texture_count::little-integer-size(32),
-      texture_header_offset::little-integer-size(32)
+      data_descriptors_count::little-integer-size(32),
+      data_descriptors_offset::little-integer-size(32)
     >> =
       stream
       |> Stream.take(0x08)
       |> Enum.to_list()
       |> :erlang.list_to_binary()
 
-    parse_textures(stream, texture_header_offset, texture_count)
+    parse_data_descriptors(stream, data_descriptors_offset, data_descriptors_count)
   end
 
-  def parse_textures(stream, texture_header_offset, texture_count) do
-    textures =
-      stream
-      |> Stream.drop(texture_header_offset)
-      |> Stream.take(0x08 * texture_count)
+  def parse_data_descriptors(stream, data_descriptors_offset, data_descriptors_count) do
+    stream
+      |> Stream.drop(data_descriptors_offset)
+      |> Stream.take(0x08 * data_descriptors_count)
       |> Stream.chunk_every(0x08)
       |> Stream.map(fn data ->
         <<
           tdo::little-integer-size(32),
           pdo::little-integer-size(32)
         >> = data |> :erlang.list_to_binary()
-
-        if pdo == 0 do
-          %{
-            texture: parse_texture_data(stream, tdo)
-          }
-        else
-          %{
-            texture: parse_texture_data(stream, tdo),
-            palette: parse_palette_data(stream, pdo)
-          }
-        end
+        
+        desc =
+          stream
+          |> Stream.drop(tdo)
+          |> Stream.take(0x0C)
+          |> Stream.chunk_every(0x0C)
+          |> Stream.map(fn d -> parse_descriptor(stream, d) end)
+          |> Enum.to_list()
+        pal =
+          if pdo != 0 do
+            parse_palette_data(stream, pdo)
+          else
+            []
+          end
+        desc ++ [pal]
       end)
-      |> Enum.to_list()
+      |> Enum.concat
+      |> List.flatten
 
-    if Enum.any?(textures, &(&1.texture.format == 0xFFFF)) do
-      Enum.split_with(textures, &(&1.texture.format == 0xFFFF))
-      |> get_sprite_data(stream)
-    else
-      textures
-    end
-  end
-
-  def get_sprite_data({sprites, [texture | []]}, stream),
-    do: get_sprite_data(sprites, texture, stream)
-
-  def get_sprite_data({sprites, [texture | _others]}, stream) do
-    IO.puts(
-      "Encountered TPL with sprite data and multiple textures! Proceeding as if other textures do not exist..."
-    )
-
-    get_sprite_data(sprites, texture, stream)
-  end
-
-  def get_sprite_data(sprites, texture, stream) when is_list(sprites) do
-    Enum.map(sprites, fn sprite ->
-      <<
-        _sprite_header::little-integer-size(32),
-        sprite_count::little-integer-size(32)
-      >> =
-        stream
-        |> Stream.drop(sprite.texture.offset)
-        |> Stream.take(0x08)
-        |> Enum.to_list()
-        |> :erlang.list_to_binary()
-
-      sprite_data =
-        stream
-        |> Stream.drop(sprite.texture.offset + 0x08)
-        |> Stream.take(sprite_count * 0x08)
-        |> Stream.chunk_every(0x08)
-        |> Enum.map(&parse_sprite_header(&1, stream |> Stream.drop(sprite.texture.offset)))
-
-      %{
-        texture: texture,
-        olde: sprite.texture,
-        sprites: sprite_data
-      }
-    end)
-  end
+  end 
 
   def parse_sprite_header(data, stream) do
     <<
       offset::little-integer-size(32),
       unknown1::little-integer-size(8),
-      bytes::little-integer-size(16),
+      bytes::integer-size(16),
       count::little-integer-size(8)
     >> = data |> :erlang.list_to_binary()
 
@@ -105,10 +114,6 @@ defmodule Tpl do
       |> Stream.take(count * 0x06)
       |> Stream.chunk_every(0x06)
       |> Enum.map(&parse_assembly_data/1)
-
-    if Enum.count(assemblies) == 0 do
-      IO.puts("Assembly list at #{offset} was empty")
-    end
 
     width =
       assemblies
@@ -120,15 +125,7 @@ defmodule Tpl do
       |> Enum.max_by(& &1.dest_y)
       |> (fn x -> x.dest_y + x.height end).()
 
-    %{
-      offset: offset,
-      unknown1: unknown1,
-      bytes: bytes,
-      count: count,
-      assemblies: assemblies,
-      width: width,
-      height: height
-    }
+    [ new_sprite(bytes, count, offset, unknown1, width, height, assemblies) ]
   end
 
   def parse_assembly_data(data) do
@@ -140,19 +137,76 @@ defmodule Tpl do
       source_coords::little-integer-size(16),
       width::little-integer-size(8),
       height::little-integer-size(8)
-    >> = data |> IO.inspect |> :erlang.list_to_binary()
-    # can't figure out how to do this just as a part of the above
+    >> = data |> :erlang.list_to_binary()
+    # can't figure out how to do this in the above match but it seems possible...?
     <<y::integer-size(6), x::integer-size(10)>> = <<source_coords::size(16)>>
 
-    %{
-      dest_x: hShift,
-      dest_y: vShift <<< 1,
-      source_y: y <<< 3,
-      source_x: x,
-      width: width,
-      height: height >>> 2
-    }
+    new_assembly(hShift, vShift <<< 1, x, y <<< 3, width, height >>> 2)
   end
+
+  def parse_descriptor(stream, descriptor_data) do
+    # there are actually 8bytes more of unknown data assoc with textures
+    <<
+      height::little-integer-size(16),
+      unknown::little-integer-size(16),
+      width::little-integer-size(16),
+      format::little-integer-size(16),
+      offset::little-integer-size(32)
+    >> = descriptor_data |> :erlang.list_to_binary()
+  
+    case format do
+      0x04 -> new_texture(format, offset, unknown, width, height)
+      0x05 -> new_texture(format, offset, unknown, width, height)
+      0xFFFF -> 
+        case parse_control_data(stream, offset) do
+          {:palette, palette_data} -> with_palette([], palette_data)
+          {:sprite, sprite_data} -> with_sprite([], sprite_data)
+          {:unknown, str} -> IO.puts(str)
+        end
+      _ -> 
+        IO.puts("Unknown format #{format}, ignoring...")
+        nil
+    end
+  end
+
+  def parse_control_data(stream, offset) do
+    <<
+      sprite_header::little-integer-size(32),
+      sprite_count::little-integer-size(32)
+    >> =
+      stream
+      |> Stream.drop(offset)
+      |> Stream.take(0x08)
+      |> Enum.to_list()
+      |> :erlang.list_to_binary()
+
+    case sprite_header do
+      0x08 ->
+        sprite_data =
+          stream
+          |> Stream.drop(offset + 0x08)
+          |> Stream.take(sprite_count * 0x08)
+          |> Stream.chunk_every(0x08)
+          |> Enum.map(&parse_sprite_header(&1, stream |> Stream.drop(offset)))
+          |> Enum.concat
+        {:sprite, sprite_data}
+
+      0x00706162 ->
+        << colors::little-integer-size(16) >>
+          = stream
+          |> Stream.drop(offset + 0x08)
+          |> Stream.take(0x02)
+          |> Enum.to_list()
+          |> :erlang.list_to_binary()
+        palette_data = new_palette(colors, 0x03, offset + 0x10)
+          
+        {:palette, palette_data}
+      _ -> 
+        <<code::integer-size(32)>> = <<sprite_header::little-size(32)>>
+        {:unknown, "Unkown controller: #{Integer.to_string(code, 16)}, ignoring" }
+    end
+  end
+    
 
   def parse_texture_data(stream, texture_data_offset) do
     stream
@@ -184,13 +238,7 @@ defmodule Tpl do
       offset::little-integer-size(32)
     >> = data |> :erlang.list_to_binary()
 
-    %{
-      height: height,
-      width: width,
-      unknown: unknown,
-      format: format,
-      offset: offset
-    }
+    new_texture(format, offset, unknown, width, height)
   end
 
   def parse_palette_data_header(data) do
@@ -200,11 +248,7 @@ defmodule Tpl do
       offset::little-integer-size(32)
     >> = data |> :erlang.list_to_binary()
 
-    %{
-      colors: colors,
-      mode: mode,
-      offset: offset
-    }
+    new_palette(colors, mode, offset)
   end
 
   def assemble_texture_array(stream, texture, read_length) do
@@ -300,11 +344,11 @@ defmodule Tpl do
   def assembly_with_pixel_data(assembly, texture_rows) do
     pixel_data =
       texture_rows
-      |> Enum.drop(assembly.source_y)
+      |> Enum.drop(assembly.src_y)
       |> Enum.take(assembly.height)
       |> Enum.map(fn row ->
         row
-        |> Enum.drop(assembly.source_x)
+        |> Enum.drop(assembly.src_x)
         |> Enum.take(assembly.width)
       end)
 
@@ -332,8 +376,7 @@ defmodule Tpl do
     max_height = sprites |> Enum.map(& &1.height) |> Enum.max()
 
     sprites
-    |> Enum.with_index()
-    |> Enum.map(fn {sprite, idx} ->
+    |> Enum.map(fn sprite ->
       pixel_data = assemble_sprite(sprite, texture_array, texture_width)
       height = sprite.height
       width = sprite.width
@@ -343,16 +386,18 @@ defmodule Tpl do
         height: height,
         width: width,
         dest_x: max_width - width,
-        dest_y: (max_height + 1) * idx + (max_height + 1 - height)
+        dest_y: (max_height + 1 - height) # (max_height + 1) * idx + (max_height + 1 - height) |> IO.inspect(label: "dest_y")
         # there is a pattern emerging here around combining tiles
       }
     end)
     |> Enum.reduce([], fn sprite, acc ->
+      pad_top = tile_of_zeroes(sprite.dest_y, max_width)
       pad_left = tile_of_zeroes(sprite.dest_x, sprite.height)
-      pad_bottom = tile_of_zeroes(max_width, 1)
+      #pad_bottom = tile_of_zeroes(max_width, 1)
+      pad_bottom = Stream.repeatedly(fn -> <<15>> end) |> Enum.take(max_width) |> Enum.chunk_every(max_width) #tile_of_zeroes(max_width, 1)
 
-      Enum.zip_with([pad_left, sprite.pixel_data], &Enum.concat/1)
-      |> Enum.concat(pad_bottom)
+      padded_left = Enum.zip_with([pad_left, sprite.pixel_data], &Enum.concat/1)
+      Enum.concat([pad_top, padded_left, pad_bottom])
       |> (fn s -> Enum.concat(acc, s) end).()
     end)
     |> List.flatten()
@@ -363,67 +408,53 @@ defmodule Tpl do
   def is_sprite?(info) when is_map(info), do: Map.has_key?(info, :olde)
   def is_sprite?(_), do: false
 
-  def as_png(input_file_name), do: as_png(input_file_name, Path.basename(input_file_name, ".tpl"))
+  def sheet_dimensions(sprites) do
+    {
+      sprites |> Enum.map(& &1.width) |> Enum.max(),
+      sprites |> Enum.map(& &1.height) |> Enum.max() |> :erlang.+(1) |> :erlang.*(Enum.count(sprites))
+    }
+  end
+    
 
-  def as_png(input_file_name, base_output_file_name) do
+  def as_png(input_file_name, opts \\ []), do: as_png(input_file_name, Path.basename(input_file_name, ".tpl"), opts)
+
+  @spec as_png(String.t(), String.t(), Keyword.t()) :: {:ok, binary} | {:error, String.t()}
+  def as_png(input_file_name, base_output_file_name, opts) do
     output_file_name = base_output_file_name
     stream = File.stream!(input_file_name, [], 1)
+    info = parse_tpl(stream)
+    texture_data = assemble_texture_array(stream, texture(info), texture_bytes(info)) |> List.flatten
+    palette_data = get_palette(stream, palette(info).offset, palette(info).colors)
 
-    stream
-    |> parse_tpl()
-    |> Enum.with_index()
-    |> Enum.each(fn {texture, idx} ->
-      as_png(stream, texture, output_file_name <> Integer.to_string(idx) <> ".png")
-    end)
+    {pixel_data, width, height} = 
+      if Keyword.has_key?(info, :sprite) do
+        cond do
+          Keyword.has_key?(opts, :sprite_index) ->
+            # output single sprite  
+            idx = Keyword.get(opts, :sprite_index)
+            sprites = 
+              Keyword.get_values(info, :sprite)
+              |> Enum.filter(&(&1.unknown == idx))
+            # { assemble_sprite_sheet(sprite, texture_data, texture(info).width), sprite.width, sprite.height }
+            Tuple.insert_at(sheet_dimensions(sprites), 0, assemble_sprite_sheet(sprites, texture_data, texture(info).width))
+          Keyword.has_key?(opts, :texture) ->
+            # output just texture
+            { texture_data |> :erlang.list_to_binary(), texture(info).width, texture(info).height }
+          true ->
+            # output spritesheet
+            sprites = Keyword.get_values(info, :sprite) #|> Enum.sort_by(& &1.unknown) #Enum.group_by(& &1.unknown) |> Map.to_list |> Enum.sort_by(&(elem(&1, 0))) |> Enum.map(&(elem(&1, 1))) |> List.flatten
+            Tuple.insert_at(sheet_dimensions(sprites), 0, assemble_sprite_sheet(Keyword.get_values(info, :sprite), texture_data, texture(info).width)) 
+        end
+      else 
+        # no sprite, just output texture(s)
+        { texture_data |> :erlang.list_to_binary(), texture(info).width, texture(info).height }
+      end
+
+    make_png(palette_data, pixel_data, width, height, output_file_name <> ".png")
   end
 
-  @spec as_png(Stream.t(), Map.t(), String.t(), boolean) :: {:ok, binary} | {:error, String.t()}
-  def as_png(stream, info, file_name, make_spritesheet \\ true) do
-    if make_spritesheet and is_sprite?(info) do
-      # this assumes palettes always succeed textures...!
-      total_bytes = info.texture.palette.offset - info.texture.texture.offset
-      max_height = info.sprites |> Enum.map(& &1.height) |> Enum.max()
-      height = (max_height + 1) * Enum.count(info.sprites)
-      width = info.sprites |> Enum.map(& &1.width) |> Enum.max()
-      palette_data = get_palette(stream, info.texture.palette.offset, info.texture.palette.colors)
 
-      texture_data =
-        assemble_texture_array(stream, info.texture.texture, total_bytes)
-        |> List.flatten()
 
-      pixel_data = assemble_sprite_sheet(info.sprites, texture_data, info.texture.texture.width)
-
-      make_png(palette_data, pixel_data, width, height, file_name)
-    else
-      info = 
-        if is_sprite?(info) do
-          List.first(info).texture
-        end
-      density_shift =
-        if info.texture.format == 4 do
-          1
-        else
-          0
-        end
-
-      # this assumes palettes always succeed textures...!
-      total_bytes = info.palette.offset - info.texture.offset
-
-      height =
-        case Integer.floor_div(total_bytes <<< density_shift, info.texture.width) do
-          h when h < info.texture.height -> h
-          _ -> info.texture.height
-        end
-
-      palette_data = get_palette(stream, info.palette.offset, info.palette.colors)
-
-      pixel_data =
-        assemble_texture_array(stream, info.texture, total_bytes)
-        |> :erlang.list_to_binary()
-
-      make_png(palette_data, pixel_data, info.texture.width, height, file_name)
-    end
-  end
 
   @spec get_palette(Stream.t(), integer, integer) :: [binary]
   def get_palette(stream, offset, colors) do
