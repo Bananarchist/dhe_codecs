@@ -426,29 +426,72 @@ defmodule Tpl do
     texture_data = assemble_texture_array(stream, texture(info), texture_bytes(info)) |> List.flatten
     palette_data = get_palette(stream, palette(info).offset, palette(info).colors)
 
-    {pixel_data, width, height} = 
-      if Keyword.has_key?(info, :sprite) do
-        cond do
-          Keyword.has_key?(opts, :sprite_index) ->
-            # output single sprite  
-            idx = Keyword.get(opts, :sprite_index)
-            sprites = 
-              Keyword.get_values(info, :sprite)
-              |> Enum.filter(&(&1.unknown == idx))
-            # { assemble_sprite_sheet(sprite, texture_data, texture(info).width), sprite.width, sprite.height }
-            Tuple.insert_at(sheet_dimensions(sprites), 0, assemble_sprite_sheet(sprites, texture_data, texture(info).width))
-          Keyword.has_key?(opts, :texture) ->
-            # output just texture
-            { texture_data |> :erlang.list_to_binary(), texture(info).width, texture(info).height }
-          true ->
-            # output spritesheet
-            sprites = Keyword.get_values(info, :sprite) #|> Enum.sort_by(& &1.unknown) #Enum.group_by(& &1.unknown) |> Map.to_list |> Enum.sort_by(&(elem(&1, 0))) |> Enum.map(&(elem(&1, 1))) |> List.flatten
-            Tuple.insert_at(sheet_dimensions(sprites), 0, assemble_sprite_sheet(Keyword.get_values(info, :sprite), texture_data, texture(info).width)) 
-        end
-      else 
-        # no sprite, just output texture(s)
-        { texture_data |> :erlang.list_to_binary(), texture(info).width, texture(info).height }
+    if Keyword.has_key?(info, :sprite) do
+      cond do
+        Keyword.has_key?(opts, :sprite_index) ->
+          # output single sprite  
+          idx = Keyword.get(opts, :sprite_index)
+          sprites = 
+            Keyword.get_values(info, :sprite)
+            |> Enum.filter(&(&1.unknown == idx))
+          export_sprite_sheet(
+            sprites, 
+            output_file_name, 
+            texture_data, # assemble_texture_array(stream, texture(info), texture_bytes(info)) |> List.flatten, 
+            palette_data, # get_palette(stream, palette(info).offset, palette(info).colors), 
+            texture(info).width
+          )
+        Keyword.has_key?(opts, :texture) ->
+          # output just texture
+          make_png(
+            palette_data, #get_palette(stream, palette(tp).offset, palette(tp).colors), 
+            texture_data |> :erlang.list_to_binary, #assemble_texture_array(stream, texture(tp).offset, texture_bytes(tp)) |> :erlang.list_to_binary(), 
+            texture(info).width, 
+            texture(info).height, 
+            output_file_name <> "_raw.png"
+          )
+          { texture_data |> :erlang.list_to_binary(), texture(info).width, texture(info).height }
+        true ->
+          # output spritesheet
+          export_sprite_sheet(
+            Keyword.get_values(info, :sprite), 
+            output_file_name, 
+            texture_data, # assemble_texture_array(stream, texture(info), texture_bytes(info)) |> List.flatten, 
+            palette_data, # get_palette(stream, palette(info).offset, palette(info).colors), 
+            texture(info).width
+          )
       end
+    else 
+      # no sprite, just output texture(s)
+      # we should relate palettes to textures... differently, as this is not stable
+      tps =
+        info
+        |> Keyword.take([:texture, :palette])
+      tps
+        |> Enum.chunk_every(2)
+        |> Enum.with_index
+        |> Enum.each(fn {tp, idx} ->
+          fname = 
+            if Enum.count(tps) == 1 do
+              output_file_name <> ".png"
+            else
+              output_file_name <> (Integer.to_string(idx)) <> ".png"
+            end
+          make_png(
+            get_palette(stream, palette(tp).offset, palette(tp).colors), 
+            assemble_texture_array(stream, texture(tp), texture_bytes(tp)) |> :erlang.list_to_binary(), 
+            texture(tp).width, 
+            texture(tp).height, 
+            fname
+          )
+        end)
+    end
+  end
+
+  def export_sprite_sheet(sprites, output_file_name, texture_data, palette_data, texture_width) do
+    # sprites = Keyword.get_values(info, :sprite) #|> Enum.sort_by(& &1.unknown) #Enum.group_by(& &1.unknown) |> Map.to_list |> Enum.sort_by(&(elem(&1, 0))) |> Enum.map(&(elem(&1, 1))) |> List.flatten
+    {width, height} = sheet_dimensions(sprites)
+    pixel_data = assemble_sprite_sheet(sprites, texture_data, texture_width) 
 
     make_png(palette_data, pixel_data, width, height, output_file_name <> ".png")
   end
