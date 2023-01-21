@@ -15,12 +15,12 @@ defmodule Tpl do
     }
   end
 
-  def new_sprite(bytes, assembly_count, offset, unknown, width, height) do
-    new_sprite(bytes, assembly_count, offset, unknown, width, height, [])
+  def new_sprite(bytes, assembly_count, offset, vertical_shift, width, height) do
+    new_sprite(bytes, assembly_count, offset, vertical_shift, width, height, [])
   end
-  def new_sprite(bytes, assembly_count, offset, unknown, width, height, assemblies) do
+  def new_sprite(bytes, assembly_count, offset, vertical_shift, width, height, assemblies) do
     {:sprite,
-    %{ bytes: Integer.to_string(bytes, 16) |> (&("0x" <> &1)).(), count: assembly_count, offset: offset, unknown: Integer.to_string(unknown, 16) |> (&("0x" <> &1)).(), width: width, height: height, assemblies: assemblies}
+    %{ bytes: Integer.to_string(bytes, 16) |> (&("0x" <> &1)).(), count: assembly_count, offset: offset, vertical_shift: vertical_shift, width: width, height: height, assemblies: assemblies}
     }
   end
 
@@ -103,7 +103,7 @@ defmodule Tpl do
   def parse_sprite_header(data, stream) do
     <<
       offset::little-integer-size(32),
-      unknown1::little-integer-size(8),
+      vshift::little-integer-size(8),
       bytes::integer-size(16),
       count::little-integer-size(8)
     >> = data |> :erlang.list_to_binary()
@@ -125,7 +125,7 @@ defmodule Tpl do
       |> Enum.max_by(& &1.dest_y)
       |> (fn x -> x.dest_y + x.height end).()
 
-    [ new_sprite(bytes, count, offset, unknown1, width, height, assemblies) ]
+    [ new_sprite(bytes, count, offset, 0xFF - vshift, width, height, assemblies) ]
   end
 
   def parse_assembly_data(data) do
@@ -373,7 +373,7 @@ defmodule Tpl do
   @spec assemble_sprite_sheet([Map.t()], [[binary]], integer) :: binary
   def assemble_sprite_sheet(sprites, texture_array, texture_width) do
     max_width = sprites |> Enum.map(& &1.width) |> Enum.max()
-    max_height = sprites |> Enum.map(& &1.height) |> Enum.max()
+    max_height = sprites |> Enum.map(& &1.height + &1.vertical_shift) |> Enum.max() |> IO.inspect
 
     sprites
     |> Enum.map(fn sprite ->
@@ -386,18 +386,19 @@ defmodule Tpl do
         height: height,
         width: width,
         dest_x: max_width - width,
-        dest_y: (max_height + 1 - height) # (max_height + 1) * idx + (max_height + 1 - height) |> IO.inspect(label: "dest_y")
+        dest_y: sprite.vertical_shift
         # there is a pattern emerging here around combining tiles
       }
     end)
     |> Enum.reduce([], fn sprite, acc ->
       pad_top = tile_of_zeroes(sprite.dest_y, max_width)
       pad_left = tile_of_zeroes(sprite.dest_x, sprite.height)
-      #pad_bottom = tile_of_zeroes(max_width, 1)
-      pad_bottom = Stream.repeatedly(fn -> <<15>> end) |> Enum.take(max_width) |> Enum.chunk_every(max_width) #tile_of_zeroes(max_width, 1)
+      #pad_bottom = tile_of_zeroes((max_height + 1) - (sprite.dest_y + sprite.height), max_width)
+      #pad_bottom = Stream.repeatedly(fn -> <<15>> end) |> Enum.take(max_width) |> Enum.chunk_every(max_width) #tile_of_zeroes(max_width, 1)
 
       padded_left = Enum.zip_with([pad_left, sprite.pixel_data], &Enum.concat/1)
-      Enum.concat([pad_top, padded_left, pad_bottom])
+      Enum.concat(pad_top, padded_left)
+      #Enum.concat([pad_top, padded_left, pad_bottom])
       |> (fn s -> Enum.concat(acc, s) end).()
     end)
     |> List.flatten()
@@ -411,7 +412,7 @@ defmodule Tpl do
   def sheet_dimensions(sprites) do
     {
       sprites |> Enum.map(& &1.width) |> Enum.max(),
-      sprites |> Enum.map(& &1.height) |> Enum.max() |> :erlang.+(1) |> :erlang.*(Enum.count(sprites))
+      sprites |> Enum.map(& &1.height + &1.vertical_shift) |> Enum.sum # |> Enum.max() |> :erlang.+(2) |> :erlang.*(Enum.count(sprites))
     }
   end
     
@@ -490,8 +491,9 @@ defmodule Tpl do
 
   def export_sprite_sheet(sprites, output_file_name, texture_data, palette_data, texture_width) do
     # sprites = Keyword.get_values(info, :sprite) #|> Enum.sort_by(& &1.unknown) #Enum.group_by(& &1.unknown) |> Map.to_list |> Enum.sort_by(&(elem(&1, 0))) |> Enum.map(&(elem(&1, 1))) |> List.flatten
-    {width, height} = sheet_dimensions(sprites)
-    pixel_data = assemble_sprite_sheet(sprites, texture_data, texture_width) 
+    uniq_sprites = sprites |> Enum.uniq
+    {width, height} = sheet_dimensions(uniq_sprites)
+    pixel_data = assemble_sprite_sheet(uniq_sprites, texture_data, texture_width) 
 
     make_png(palette_data, pixel_data, width, height, output_file_name <> ".png")
   end

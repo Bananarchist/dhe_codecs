@@ -12,12 +12,13 @@ A list of things that need to be done; consider opening a pull request with one 
 - Does not handle multiple palettes
 
 ## Tpl.ex
-- 4-bit images are broken
-- Sprite assembly is not implemented
+- Sprite assembly
+    - Started using uniq to dedupe based on _data_ but maybe we should not? Maybe there's a good reason for dupes
+    - Started using vertical shift but may be using it wrong, needs more research
 
 ## Afs.ex
 - Extraction is slow af
 
 ## Ptx.ex
-- Works about as well as Tpl.ex, _if_ it works that well
+- Does not really do much
 
