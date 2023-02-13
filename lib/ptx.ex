@@ -1,6 +1,19 @@
 defmodule Ptx do
+  @behaviour Identification
 
   @magic_number << 0x50, 0x54, 0x58, 0x40 >>
+
+  @impl Identification
+  def is?(file_name) do
+    << 
+      magic_number::bitstring-size(32)
+    >> = File.stream!(file_name, [], 1)
+      |> Stream.take(0x04)
+      |> Enum.to_list()
+      |> :erlang.list_to_binary()
+
+    magic_number == @magic_number
+  end
 
   def to_binary(list_of_binaries) do
     Enum.reduce(list_of_binaries, fn x, acc -> acc <> x end)
@@ -20,8 +33,8 @@ defmodule Ptx do
 
         <<
           unknown_short1::little-integer-size(16),
-          unknown_short2::little-integer-size(16),
           width::little-integer-size(16),
+          utilized_width::little-integer-size(16),
           height::little-integer-size(16),
           unknown_long::bitstring-size(32),
           colors::little-integer-size(32),
@@ -41,7 +54,6 @@ defmodule Ptx do
         unknowns = 
           %{
             addr_0x04: unknown_short1,
-            addr_0x06: unknown_short2,
             addr_0x0C: unknown_long,
             addr_0x15: unknown_short3,
             addr_0x17: unknown_char1,
@@ -50,6 +62,7 @@ defmodule Ptx do
         %{
           palette: palette,
           width: width,
+          utilized_width: utilized_width,
           height: height,
           indexing: indexing,
           data_offset: data_offset,

@@ -1,6 +1,18 @@
 defmodule Fct do
+  @behaviour Identification
   @magic_number << 0x46, 0x43, 0x54, 0x00 >>
 
+  @impl Identification
+  def is?(file_name) do
+    << 
+      magic_number::bitstring-size(32)
+    >> = File.stream!(file_name, [], 1)
+      |> Stream.take(0x04)
+      |> Enum.to_list()
+      |> :erlang.list_to_binary()
+
+    magic_number == @magic_number
+  end
   def info(file_name), do: parse_fct(File.stream!(file_name, [], 1))
 
   def parse_fct(stream) do

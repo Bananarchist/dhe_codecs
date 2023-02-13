@@ -1,9 +1,24 @@
 defmodule Png do
   # this module is 80% courtesy of https://stackoverflow.com/a/8113783
+  @behaviour Identification
 
+  @magic_number <<137, 80, 78, 71, 13, 10, 26, 10>>
   @plte_tag <<80, 76, 84, 69>>
   @idat_tag <<73, 68, 65, 84>>
   @trns_tag <<116, 82, 78, 83>>
+
+  @impl Identification
+  def is?(file_name) do
+    << 
+      magic_number::bitstring-size(64)
+    >> = File.stream!(file_name, [], 1)
+      |> Stream.take(0x08)
+      |> Enum.to_list()
+      |> :erlang.list_to_binary()
+
+    magic_number == @magic_number
+  end
+  
 
   def make_png() do
     %{
@@ -42,7 +57,7 @@ defmodule Png do
   def execute_options(width, height, bit_depth, {3, palette}, pixel_data, bgra)
       when not is_nil(width) and not is_nil(height) and not is_nil(bit_depth) do
     {:ok,
-     magic_number() <>
+     @magic_number <>
        header_chunk(width, height, bit_depth, 3) <>
        plte_chunk(palette, bgra) <>
        data_chunk(pixel_data, &no_filter(width, &1)) <>
@@ -53,7 +68,7 @@ defmodule Png do
       when not is_nil(width) and not is_nil(height) and not is_nil(bit_depth) and
              not is_nil(color_type) do
     {:ok,
-     magic_number() <>
+     @magic_number <>
        header_chunk(width, height, bit_depth, color_type) <>
        data_chunk(pixel_data, &no_filter(width, &1)) <>
        end_chunk()}
@@ -63,9 +78,6 @@ defmodule Png do
     {:error, "Options invalid"}
   end
 
-  def magic_number do
-    <<137, 80, 78, 71, 13, 10, 26, 10>>
-  end
 
   def header_chunk(width, height, bit_depth, color_type) do
     ihdr = <<73, 72, 68, 82>>
