@@ -14,5 +14,8 @@ defmodule Cns do
 
     magic_number == @magic_number
   end
+  
+  @impl Identification
+  def extension(), do: "cns"
 
 end

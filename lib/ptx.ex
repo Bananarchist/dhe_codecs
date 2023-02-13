@@ -14,6 +14,9 @@ defmodule Ptx do
 
     magic_number == @magic_number
   end
+  @impl Identification
+  def extension(), do: "ptx"
+
 
   def to_binary(list_of_binaries) do
     Enum.reduce(list_of_binaries, fn x, acc -> acc <> x end)

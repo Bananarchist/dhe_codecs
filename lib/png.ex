@@ -18,6 +18,9 @@ defmodule Png do
 
     magic_number == @magic_number
   end
+  @impl Identification
+  def extension(), do: "png"
+
   
 
   def make_png() do

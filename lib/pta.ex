@@ -14,5 +14,8 @@ defmodule Pta do
 
     magic_number == @magic_number
   end
+  @impl Identification
+  def extension(), do: "pta"
+
 end
 

@@ -14,6 +14,9 @@ defmodule Ptp do
 
     magic_number == @magic_number
   end
+  @impl Identification
+  def extension(), do: "ptp"
+
 
   def parse_ptp(stream) do
     <<

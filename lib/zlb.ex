@@ -17,6 +17,9 @@ defmodule Zlb do
     magic_number == @magic_number
   end
 
+  @impl Identification
+  def extension(), do: "zlb"
+
   @impl Extractor
   def extract(file_name) do
     if is?(file_name) do

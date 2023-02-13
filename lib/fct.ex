@@ -13,6 +13,9 @@ defmodule Fct do
 
     magic_number == @magic_number
   end
+  @impl Identification
+  def extension(), do: "fct"
+
   def info(file_name), do: parse_fct(File.stream!(file_name, [], 1))
 
   def parse_fct(stream) do
