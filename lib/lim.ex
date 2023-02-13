@@ -265,7 +265,6 @@ defmodule Lim do
                 |> stream_of_zeros
                 |> Enum.to_list
                 |> :erlang.list_to_binary
-    IO.inspect({only.image_y, skip, in_pixels(only.read_length), remainder, skip + in_pixels(only.read_length) + remainder, only.tiles |> Enum.count})
     Enum.zip(only.tiles) 
       |> Enum.map(fn row -> 
         pixel_row = 

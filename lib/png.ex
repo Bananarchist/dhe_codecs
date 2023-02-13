@@ -181,7 +181,7 @@ defmodule Png do
   end
 
   def crc_of_chunk(chunk) do
-    crc = <<Crc.crc32(chunk)::32>>
+    crc = <<:erlang.crc32(chunk)::32>> # Crc.crc32(chunk)::32>>
     chunk <> crc
   end
 end
