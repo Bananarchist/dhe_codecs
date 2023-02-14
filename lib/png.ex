@@ -8,16 +8,14 @@ defmodule Png do
   @trns_tag <<116, 82, 78, 83>>
 
   @impl Identification
-  def is?(file_name) do
+  def is?(input) do
     << 
-      magic_number::bitstring-size(64)
-    >> = File.stream!(file_name, [], 1)
-      |> Stream.take(0x08)
-      |> Enum.to_list()
-      |> :erlang.list_to_binary()
-
+      magic_number::bitstring-size(64),
+      _rest
+    >> = input
     magic_number == @magic_number
   end
+
   @impl Identification
   def extension(), do: "png"
 
