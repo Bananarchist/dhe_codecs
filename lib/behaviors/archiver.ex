@@ -7,7 +7,7 @@ end
 
 defmodule Archiver do
   @doc """
-  Insertsd files into an archive
+  Inserts files into an archive
   """
-  @callback archive(String.t, [String.t]) :: {:ok, binary} | {:error, String.t}
+  @callback archive([String.t] | binary) :: {:ok, binary} | {:error, String.t}
 end
