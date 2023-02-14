@@ -7,7 +7,7 @@ defmodule Spa do
   def is?(input) do
     << 
       magic_number::bitstring-size(32),
-      _rest
+      _rest::binary
     >> = input
     magic_number == @magic_number
   end
