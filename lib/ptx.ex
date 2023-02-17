@@ -57,6 +57,7 @@ defmodule Ptx do
 
       %{
         palette: palette,
+        palette_offset: palette_offset,
         width: width,
         utilized_width: utilized_width,
         height: height,
@@ -67,11 +68,19 @@ defmodule Ptx do
     end
   end
 
+  def nibble_indexing(info) do
+    case info.indexing do
+      4 -> true
+      6 -> true
+      _ -> false
+    end
+  end
+
   def tiles(stream, info) do
-    tile_width = if info.indexing == 4, do: 32, else: 16
+    tile_width = if nibble_indexing(info), do: 32, else: 16
 
     data_length =
-      if info.indexing == 4, do: (info.width * info.height) >>> 1, else: info.width * info.height
+      if nibble_indexing(info), do: (info.width * info.height) >>> 1, else: info.width * info.height
 
     data =
       stream
@@ -79,7 +88,7 @@ defmodule Ptx do
       |> Stream.take(data_length)
       |> Stream.chunk_every(0x80)
       |> Stream.map(fn tile ->
-        nibble_stream(tile, info.indexing)
+        nibble_stream(tile, info)
         |> Enum.into(%Tile{width: tile_width, height: 8})
       end)
       |> Enum.to_list()
@@ -89,7 +98,6 @@ defmodule Ptx do
 
   def tile_rows(tiles, info) do
     tiles
-    # %Tile{height: 8},
     |> Enum.chunk_while(
       [],
       fn el, acc ->
@@ -152,8 +160,8 @@ defmodule Ptx do
     end
   end
 
-  def nibble_stream(stream, indexing) do
-    if indexing == 4 do
+  def nibble_stream(stream, info) do
+    if nibble_indexing(info) do
       Stream.map(stream, fn byte ->
         <<
           nib2::little-integer-size(4),
