@@ -2,7 +2,7 @@ defmodule Extractor do
   @doc """
   Extracts files from a given archive
   """
-  @callback extract(binary) :: {:ok, binary} | {:ok, [key: binary]} | {:error, String.t}
+  @callback extract(binary) :: {:ok, binary} | {:ok, [binary]} | {:ok, [key: binary]} | {:error, String.t}
 end
 
 defmodule Archiver do

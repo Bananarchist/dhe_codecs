@@ -1,6 +1,7 @@
 defmodule Ptg do
   @behaviour Identification
   @behaviour Extractor
+  @behaviour PngProducer
 
   @magic_number <<0x50, 0x54, 0x47, 0x40>>
 
@@ -61,46 +62,40 @@ defmodule Ptg do
 
   def parse_assembly_data(data) do
     <<
-      # start_read_x
-      start_read::little-integer-size(16),
-      # actually maybe start_read_y
-      counter_1::little-integer-size(16),
-      # start_write_x
-      x::little-integer-size(16),
-      # start_write_y
-      y::little-integer-size(16),
+      read_start_x::little-integer-size(16),
+      read_start_y::little-integer-size(16),
+      write_start_x::little-integer-size(16),
+      write_start_y::little-integer-size(16),
       maybe_just_zero::little-integer-size(16),
-      # end_read_x
-      end_read::little-integer-size(16),
-      # and end_read_y
-      counter_2::little-integer-size(16),
-      # end_write_x
-      end_x::little-integer-size(16),
-      # end_write_y
-      end_y::little-integer-size(16),
+      read_stop_x::little-integer-size(16),
+      read_stop_y::little-integer-size(16),
+      write_stop_x::little-integer-size(16),
+      write_stop_y::little-integer-size(16),
       mbalso_just_zero::little-integer-size(16)
     >> =
       data
       |> :erlang.list_to_binary()
 
     %{
-      start_read: start_read,
-      counter_1: counter_1,
-      x: x,
-      y: y,
+      read_start_x: read_start_x,
+      read_start_y: read_start_y,
+      write_start_x: write_start_x,
+      write_start_y: write_start_y,
       maybe_just_zero: maybe_just_zero,
-      end_read: end_read,
-      counter_2: counter_2,
-      end_x: end_x,
-      end_y: end_y,
+      read_stop_x: read_stop_x,
+      read_stop_y: read_stop_y,
+      write_stop_x: write_stop_x,
+      write_stop_y: write_stop_y,
       mbalso_just_zero: mbalso_just_zero
     }
   end
 
-  def as_png(filename) do
+  @impl PngProducer
+  def to_png(filename) do
     stream = File.stream!(filename, [], 1)
     info = parse_ptg(stream)
     ptxs = parse_ptxs(stream, info)
+    output_file_name = Path.basename(filename, "." <> extension()) <> ".png"
 
     {palette, tile} = assemble_image_data(ptxs, info)
 
@@ -109,8 +104,14 @@ defmodule Ptg do
          |> Png.with_height(Tile.height(tile))
          |> Png.with_color_type(palette |> Enum.to_list())
          |> Png.execute(tile.data |> :erlang.list_to_binary()) do
-      {:ok, data} -> File.write("#{filename}.png", data)
-      {:error, err} -> IO.puts(err)
+      {:ok, data} ->
+        case File.write(output_file_name, data) do
+          :ok -> {:ok, data}
+          err -> err
+        end
+
+      {:error, err} ->
+        IO.puts(err)
     end
   end
 
@@ -168,28 +169,36 @@ defmodule Ptg do
     |> Enum.map(fn {ass, data_idx} ->
       image_data = elem(ptx.image_data, data_idx)
 
-      {Map.put(
-         ass,
-         :tile,
-         Tile.slice(image_data, ass.start_read, 0, Tile.width(image_data) - ass.end_read, 0)
-       ), data_idx}
+      tile =
+        Tile.slice(
+          image_data,
+          ass.read_start_x,
+          ass.read_start_y,
+          Tile.width(image_data) - ass.read_stop_x,
+          Tile.height(image_data) - ass.read_stop_y
+        )
+
+      {Map.put(ass, :tile, tile), data_idx}
     end)
-    |> Enum.group_by(&elem(&1, 0).y)
+    |> Enum.group_by(&elem(&1, 0).write_start_y)
     |> Enum.to_list()
     |> Enum.sort_by(&elem(&1, 0))
-    |> IO.inspect()
-    |> Enum.map(fn {_y, row} -> Enum.sort_by(row, &elem(&1, 0).x) end)
+    |> Enum.map(fn {_y, row} -> Enum.sort_by(row, &elem(&1, 0).write_start_x) end)
     |> Enum.map(fn [{ass, ass_data_idx} | rest] ->
       row =
         Enum.reduce(
           [{ass, ass_data_idx} | rest],
-          Tile.filler(%Tile{width: ass.x, height: Tile.height(ass.tile)}),
+          Tile.filler(%Tile{width: ass.write_start_x, height: Tile.height(ass.tile)}),
           fn {el, _data_idx}, acc ->
-            space_between = el.x - Tile.width(acc)
-            padded = Tile.pad(el.tile, space_between, 0, 0, 0)
+            if el.write_start_x == 0 do
+              el.tile
+            else
+              space_between = el.write_start_x - Tile.width(acc)
+              padded = Tile.pad(el.tile, space_between, 0, 0, 0)
 
-            Enum.zip_with(acc, padded, &Enum.concat/2)
-            |> Enum.into(%Tile{acc | width: el.end_x, data: []})
+              Enum.zip_with(acc, padded, &Enum.concat/2)
+              |> Enum.into(%Tile{acc | width: el.write_stop_x, data: []})
+            end
           end
         )
 
@@ -198,9 +207,6 @@ defmodule Ptg do
     |> Enum.concat()
     |> Enum.into(%Tile{width: info.width, height: info.height})
     |> (fn tile -> {ptx.palette, tile} end).()
-  end
-
-  def combine_ptxs(info) do
   end
 
   @impl Extractor

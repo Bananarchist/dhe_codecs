@@ -23,7 +23,7 @@ defmodule Ptx do
     >> =
       stream
       |> Enum.take(0x04)
-      |> :erlang.list_to_binary
+      |> :erlang.list_to_binary()
 
     if magic_number != @magic_number do
       {:error, "Does not appear to be a PTX file - magic number did not match"}
@@ -33,31 +33,36 @@ defmodule Ptx do
         width::little-integer-size(16),
         utilized_width::little-integer-size(16),
         height::little-integer-size(16),
-        unknown_long::bitstring-size(32),
-        colors::little-integer-size(32),
         indexing::little-integer-size(8),
-        unknown_short3::little-integer-size(16),
-        unknown_char1::little-integer-size(8),
+        unknown_short2::bitstring-size(16),
+        unknown_char1::bitstring-size(8),
+        colors::little-integer-size(32),
+        unknown_char2::little-integer-size(8),
+        unknown_short3::bitstring-size(16),
+        unknown_char3::little-integer-size(8),
         palette_offset::little-integer-size(32),
         data_offset::little-integer-size(32)
       >> =
         stream
         |> Stream.drop(0x04)
         |> Enum.take(0x1C)
-        |> :erlang.list_to_binary
+        |> :erlang.list_to_binary()
 
       palette = parse_palette(stream |> Stream.drop(palette_offset), colors)
 
       unknowns = %{
         addr_0x04: unknown_short1,
-        addr_0x0C: unknown_long,
+        addr_0x0D: unknown_short2,
+        addr_0x0F: unknown_char1,
+        addr_0x14: unknown_char2,
         addr_0x15: unknown_short3,
-        addr_0x17: unknown_char1
+        addr_0x17: unknown_char3
       }
 
       %{
         palette: palette,
         palette_offset: palette_offset,
+        colors: colors,
         width: width,
         utilized_width: utilized_width,
         height: height,
@@ -71,7 +76,6 @@ defmodule Ptx do
   def nibble_indexing(info) do
     case info.indexing do
       4 -> true
-      6 -> true
       _ -> false
     end
   end
@@ -80,7 +84,9 @@ defmodule Ptx do
     tile_width = if nibble_indexing(info), do: 32, else: 16
 
     data_length =
-      if nibble_indexing(info), do: (info.width * info.height) >>> 1, else: info.width * info.height
+      if nibble_indexing(info),
+        do: (info.width * info.height) >>> 1,
+        else: info.width * info.height
 
     data =
       stream
@@ -154,7 +160,7 @@ defmodule Ptx do
          |> Png.with_height(info.height)
          |> Png.with_color_type(info.palette |> Enum.to_list())
          |> Png.with_bgra()
-         |> Png.execute(image_tile.data |> :erlang.list_to_binary) do
+         |> Png.execute(image_tile.data |> :erlang.list_to_binary()) do
       {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
       {:error, err} -> IO.puts(err)
     end
