@@ -102,18 +102,16 @@ defmodule Ptg do
     info = parse_ptg(stream)
     ptxs = parse_ptxs(stream, info)
 
-    Enum.map(ptxs, fn ptx -> assemble_image_data(ptx, info) end)
-    |> Enum.with_index()
-    |> Enum.each(fn {{palette, tile}, index} ->
-      case Png.make_png
-        |> Png.with_width(Tile.width(tile))
-        |> Png.with_height(Tile.height(tile))
-        |> Png.with_color_type(palette |> Enum.to_list)
-        |> Png.execute(tile.data |> :erlang.list_to_binary) do
-        {:ok, data} -> File.write("#{filename}_#{index}.png", data)
-        {:error, err} -> IO.puts(err)
-      end
-    end)
+    {palette, tile} = assemble_image_data(ptxs, info)
+
+    case Png.make_png()
+         |> Png.with_width(Tile.width(tile))
+         |> Png.with_height(Tile.height(tile))
+         |> Png.with_color_type(palette |> Enum.to_list())
+         |> Png.execute(tile.data |> :erlang.list_to_binary()) do
+      {:ok, data} -> File.write("#{filename}.png", data)
+      {:error, err} -> IO.puts(err)
+    end
   end
 
   def parse_ptxs(stream, info) do
@@ -125,9 +123,11 @@ defmodule Ptg do
         Ptx.tiles(ptx_stream, ptx_info) |> Ptx.tile_rows(ptx_info) |> Ptx.image_data(ptx_info)
 
       %{
-        assemblies: Enum.take(info.assemblies, info.ptx1_assembly_count),
-        info: ptx_info,
-        image_data: ptx_data
+        assemblies:
+          Enum.take(info.assemblies, info.ptx1_assembly_count) |> Enum.map(fn a -> {a, 0} end),
+        info: {ptx_info},
+        image_data: {ptx_data},
+        palette: ptx_info.palette
       }
     else
       ptx_stream1 =
@@ -144,52 +144,62 @@ defmodule Ptg do
       ptx_data2 =
         Ptx.tiles(ptx_stream2, ptx_info2) |> Ptx.tile_rows(ptx_info2) |> Ptx.image_data(ptx_info2)
 
-      [
-        %{
-          assemblies: Enum.take(info.assemblies, info.ptx1_assembly_count),
-          info: ptx_info1,
-          image_data: ptx_data1
-        },
-        %{
-          assemblies:
-            Enum.drop(info.assemblies, info.ptx1_assembly_count)
-            |> Enum.take(info.ptx2_assembly_count),
-          info:
-            if(ptx_info2.palette_offset == 0,
-              do: Map.put(ptx_info2, :palette, ptx_info1.palette),
-              else: ptx_info2
-            ),
-          image_data: ptx_data2
-        }
-      ]
+      assemblies =
+        Enum.split(info.assemblies, info.ptx1_assembly_count)
+        |> Tuple.to_list()
+        |> Enum.with_index()
+        |> Enum.map(fn {asses, idx} -> Enum.map(asses, fn a -> {a, idx} end) end)
+        |> List.flatten()
+
+      info = {ptx_info1, ptx_info2}
+      image_data = {ptx_data1, ptx_data2}
+
+      %{
+        assemblies: assemblies,
+        info: info,
+        image_data: image_data,
+        palette: ptx_info1.palette
+      }
     end
   end
 
   def assemble_image_data(ptx, info) do
     ptx.assemblies
-    |> Enum.map(fn ass ->
-      Map.put(ass, :tile, Tile.slice(ptx.image_data, ass.start_read, 0, Tile.width(ptx.image_data) - ass.end_read, 0))
-      # %{ ass | data: Tile.slice(ptx.image_data, ass.start_read, 0, Tile.width(ptx.image_data) - ass.end_read, 0) }
-      end)
-    |> Enum.chunk_by(& &1.y)
-    |> Enum.map(fn [ass | rest] ->
-      row = Enum.reduce([ass | rest], Tile.filler(%Tile{width: ass.x, height: Tile.height(ass.tile)}),
-        fn el, acc -> 
-          space_between = el.x - Tile.width(acc)
-          padded = Tile.pad(el.tile, space_between, 0, 0, 0) 
-          Enum.zip_with(acc, padded, &Enum.concat/2)
-          |> Enum.into(%Tile{ acc | width: el.end_x, data: [] })
-        end)
+    |> Enum.map(fn {ass, data_idx} ->
+      image_data = elem(ptx.image_data, data_idx)
+
+      {Map.put(
+         ass,
+         :tile,
+         Tile.slice(image_data, ass.start_read, 0, Tile.width(image_data) - ass.end_read, 0)
+       ), data_idx}
+    end)
+    |> Enum.group_by(&elem(&1, 0).y)
+    |> Enum.to_list()
+    |> Enum.sort_by(&elem(&1, 0))
+    |> IO.inspect()
+    |> Enum.map(fn {_y, row} -> Enum.sort_by(row, &elem(&1, 0).x) end)
+    |> Enum.map(fn [{ass, ass_data_idx} | rest] ->
+      row =
+        Enum.reduce(
+          [{ass, ass_data_idx} | rest],
+          Tile.filler(%Tile{width: ass.x, height: Tile.height(ass.tile)}),
+          fn {el, _data_idx}, acc ->
+            space_between = el.x - Tile.width(acc)
+            padded = Tile.pad(el.tile, space_between, 0, 0, 0)
+
+            Enum.zip_with(acc, padded, &Enum.concat/2)
+            |> Enum.into(%Tile{acc | width: el.end_x, data: []})
+          end
+        )
+
       Tile.pad(row, 0, 0, info.width - Tile.width(row), 0)
-      end)
+    end)
     |> Enum.concat()
     |> Enum.into(%Tile{width: info.width, height: info.height})
-    |> (fn tile -> { ptx.info.palette, tile } end).()
+    |> (fn tile -> {ptx.palette, tile} end).()
   end
 
-          
-          
-          
   def combine_ptxs(info) do
   end
 
