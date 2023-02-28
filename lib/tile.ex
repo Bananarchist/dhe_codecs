@@ -4,6 +4,7 @@ defmodule Tile do
             height: 0,
             empty: <<0>>
 
+
   def width(%Tile{} = tile), do: tile.width
   def height(%Tile{} = tile), do: tile.height
 
@@ -42,7 +43,15 @@ defmodule Tile do
     Stream.repeatedly(fn -> initial end) |> Enum.take(height * width)
   end
 
-  def pad(%Tile{} = tile, left \\ 0, top \\ 0, right \\ 0, bottom \\ 0) do
+  def pad(tile, left \\ 0, top \\ 0, right \\ 0, bottom \\ 0)
+
+  def pad(%Tile{} = tile, left, top, right, bottom)
+    when left == 0 and right == 0 and top == 0 and bottom == 0, do: tile
+
+  def pad(tile, left, top, right, bottom)
+    when left < 0 or right < 0 or top < 0 or bottom < 0, do: tile
+
+  def pad(%Tile{} = tile, left, top, right, bottom) do
     original_height = height(tile)
     original_width = width(tile)
     new_width = left + original_width + right
@@ -52,8 +61,16 @@ defmodule Tile do
     top_pad = filler(%Tile{width: new_width, height: top})
     bottom_pad = filler(%Tile{width: new_width, height: bottom})
 
+    to_concat = 
+      cond do
+        left == 0 and right == 0 -> [tile]
+        left == 0 -> [tile, right_pad]
+        right == 0 -> [left_pad, tile]
+        true -> [left_pad, tile, right_pad]
+      end
+
     horizontally_padded =
-      Enum.zip_with([left_pad, tile, right_pad], &Enum.concat/1)
+      Enum.zip_with(to_concat, &Enum.concat/1)
       |> Enum.into(%Tile{width: new_width, height: original_height})
 
     Enum.concat([top_pad, horizontally_padded, bottom_pad])
