@@ -346,8 +346,6 @@ defmodule Lim do
   defp get_block(stream, block_counter), do: Stream.drop(stream, block_counter) |> Stream.take(1) 
   defp get_tiles(stream, tile_counter, read_length), do: Stream.drop(stream, tile_counter) |> Stream.take(read_length)
 
-  defp chunk_tiles(stream), do: Stream.chunk_every(stream, 0x10) |> Stream.chunk_every(0x08) 
-
   def parse_palette(stream, offset) do
     stream
     |> Stream.drop(offset)

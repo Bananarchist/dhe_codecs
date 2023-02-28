@@ -373,7 +373,7 @@ defmodule Tpl do
   @spec assemble_sprite_sheet([Map.t()], [[binary]], integer) :: binary
   def assemble_sprite_sheet(sprites, texture_array, texture_width) do
     max_width = sprites |> Enum.map(& &1.width) |> Enum.max()
-    max_height = sprites |> Enum.map(& &1.height + &1.vertical_shift) |> Enum.max() |> IO.inspect
+    #max_height = sprites |> Enum.map(& &1.height + &1.vertical_shift) |> Enum.max() |> IO.inspect
 
     sprites
     |> Enum.map(fn sprite ->
