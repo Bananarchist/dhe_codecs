@@ -26,9 +26,9 @@ defmodule Ptg do
         ptx1_offset::little-integer-size(32),
         ptx2_offset::little-integer-size(32),
         # these correlate in someway to the PTXs I just haven't
-        unknown1::little-integer-size(16),
+        width::little-integer-size(16),
         # yet identifies how
-        unknown2::little-integer-size(16),
+        height::little-integer-size(16),
         ptx1_assembly_count::little-integer-size(16),
         ptx2_assembly_count::little-integer-size(16),
         zeroes::bitstring-size(64)
@@ -47,8 +47,8 @@ defmodule Ptg do
         |> Enum.map(&parse_assembly_data/1)
 
       %{
-        unknown1: unknown1,
-        unknown2: unknown2,
+        width: width,
+        height: height,
         ptx1_assembly_count: ptx1_assembly_count,
         ptx2_assembly_count: ptx2_assembly_count,
         ptx1_offset: ptx1_offset,
@@ -61,16 +61,22 @@ defmodule Ptg do
 
   def parse_assembly_data(data) do
     <<
+      # start_read_x
       start_read::little-integer-size(16),
-      # actually maybe read y start
+      # actually maybe start_read_y
       counter_1::little-integer-size(16),
+      # start_write_x
       x::little-integer-size(16),
+      # start_write_y
       y::little-integer-size(16),
       maybe_just_zero::little-integer-size(16),
+      # end_read_x
       end_read::little-integer-size(16),
-      # and read y end
+      # and end_read_y
       counter_2::little-integer-size(16),
+      # end_write_x
       end_x::little-integer-size(16),
+      # end_write_y
       end_y::little-integer-size(16),
       mbalso_just_zero::little-integer-size(16)
     >> =
@@ -94,7 +100,20 @@ defmodule Ptg do
   def as_png(filename) do
     stream = File.stream!(filename, [], 1)
     info = parse_ptg(stream)
-    ptx_data = parse_ptxs(stream, info)
+    ptxs = parse_ptxs(stream, info)
+
+    Enum.map(ptxs, fn ptx -> assemble_image_data(ptx, info) end)
+    |> Enum.with_index()
+    |> Enum.each(fn {{palette, tile}, index} ->
+      case Png.make_png
+        |> Png.with_width(Tile.width(tile))
+        |> Png.with_height(Tile.height(tile))
+        |> Png.with_color_type(palette |> Enum.to_list)
+        |> Png.execute(tile.data |> :erlang.list_to_binary) do
+        {:ok, data} -> File.write("#{filename}_#{index}.png", data)
+        {:error, err} -> IO.puts(err)
+      end
+    end)
   end
 
   def parse_ptxs(stream, info) do
@@ -125,7 +144,7 @@ defmodule Ptg do
       ptx_data2 =
         Ptx.tiles(ptx_stream2, ptx_info2) |> Ptx.tile_rows(ptx_info2) |> Ptx.image_data(ptx_info2)
 
-      {
+      [
         %{
           assemblies: Enum.take(info.assemblies, info.ptx1_assembly_count),
           info: ptx_info1,
@@ -142,10 +161,35 @@ defmodule Ptg do
             ),
           image_data: ptx_data2
         }
-      }
+      ]
     end
   end
 
+  def assemble_image_data(ptx, info) do
+    ptx.assemblies
+    |> Enum.map(fn ass ->
+      Map.put(ass, :tile, Tile.slice(ptx.image_data, ass.start_read, 0, Tile.width(ptx.image_data) - ass.end_read, 0))
+      # %{ ass | data: Tile.slice(ptx.image_data, ass.start_read, 0, Tile.width(ptx.image_data) - ass.end_read, 0) }
+      end)
+    |> Enum.chunk_by(& &1.y)
+    |> Enum.map(fn [ass | rest] ->
+      row = Enum.reduce([ass | rest], Tile.filler(%Tile{width: ass.x, height: Tile.height(ass.tile)}),
+        fn el, acc -> 
+          space_between = el.x - Tile.width(acc)
+          padded = Tile.pad(el.tile, space_between, 0, 0, 0) 
+          Enum.zip_with(acc, padded, &Enum.concat/2)
+          |> Enum.into(%Tile{ acc | width: el.end_x, data: [] })
+        end)
+      Tile.pad(row, 0, 0, info.width - Tile.width(row), 0)
+      end)
+    |> Enum.concat()
+    |> Enum.into(%Tile{width: info.width, height: info.height})
+    |> (fn tile -> { ptx.info.palette, tile } end).()
+  end
+
+          
+          
+          
   def combine_ptxs(info) do
   end
 
