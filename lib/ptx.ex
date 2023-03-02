@@ -35,7 +35,7 @@ defmodule Ptx do
         height::little-integer-size(16),
         indexing::little-integer-size(8),
         unknown_short2::bitstring-size(16),
-        unknown_char1::bitstring-size(8),
+        channel_ordering::bitstring-size(8),
         colors::little-integer-size(32),
         unknown_char2::little-integer-size(8),
         unknown_short3::bitstring-size(16),
@@ -48,21 +48,18 @@ defmodule Ptx do
         |> Enum.take(0x1C)
         |> :erlang.list_to_binary()
 
-      palette = parse_palette(stream |> Stream.drop(palette_offset), colors)
-
       unknowns = %{
         addr_0x04: unknown_short1,
         addr_0x0D: unknown_short2,
-        addr_0x0F: unknown_char1,
         addr_0x14: unknown_char2,
         addr_0x15: unknown_short3,
         addr_0x17: unknown_char3
       }
 
       %{
-        palette: palette,
         palette_offset: palette_offset,
         colors: colors,
+        channel_ordering: channel_ordering,
         width: width,
         utilized_width: utilized_width,
         height: height,
@@ -126,10 +123,16 @@ defmodule Ptx do
     Enum.reduce(tile_rows, %Tile{width: info.width, height: info.height}, &Enum.into/2)
   end
 
-  def parse_palette(stream, colors) do
-    stream
-    |> Stream.take(colors * 0x04)
-    |> Stream.chunk_every(0x04)
+  def get_palette(stream, info, fallback \\ []) do
+    if info.palette_offset == 0 do
+      fallback
+    else
+      stream
+      |> Stream.drop(info.palette_offset)
+      |> Stream.take(info.colors * 0x04)
+      |> Stream.chunk_every(0x04)
+      |> Enum.to_list
+    end
   end
 
   def as_png(input_file_name),
@@ -149,6 +152,7 @@ defmodule Ptx do
   end
 
   def as_png(stream, info, file_name) do
+    conditionally_bgra = 
     image_tile =
       stream
       |> tiles(info)
@@ -158,8 +162,8 @@ defmodule Ptx do
     case Png.make_png()
          |> Png.with_width(info.width)
          |> Png.with_height(info.height)
-         |> Png.with_color_type(info.palette |> Enum.to_list())
-         |> Png.with_bgra()
+         |> Png.with_color_type(get_palette(stream, info) |> Enum.to_list())
+         |> reorder_channels(info)
          |> Png.execute(image_tile.data |> :erlang.list_to_binary()) do
       {:ok, png_data} -> File.write(file_name, png_data <> <<>>)
       {:error, err} -> IO.puts(err)
@@ -178,6 +182,13 @@ defmodule Ptx do
       end)
     else
       stream
+    end
+  end
+
+  def reorder_channels(png, info) do
+    case info.channel_ordering do
+      0x08 -> Png.with_bgra(png)
+      _ -> png
     end
   end
 end

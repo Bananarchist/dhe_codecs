@@ -119,7 +119,7 @@ defmodule Ptg do
     if info.ptx2_offset == 0 do
       ptx_stream = Stream.drop(stream, info.ptx1_offset)
       ptx_info = Ptx.parse_ptx(ptx_stream)
-
+      ptx_palette = Ptx.get_palette(ptx_stream, ptx_info)
       ptx_data =
         Ptx.tiles(ptx_stream, ptx_info) |> Ptx.tile_rows(ptx_info) |> Ptx.image_data(ptx_info)
 
@@ -128,7 +128,7 @@ defmodule Ptg do
           Enum.take(info.assemblies, info.ptx1_assembly_count) |> Enum.map(fn a -> {a, 0} end),
         info: {ptx_info},
         image_data: {ptx_data},
-        palette: ptx_info.palette
+        palette: ptx_palette
       }
     else
       ptx_stream1 =
@@ -138,6 +138,8 @@ defmodule Ptg do
 
       ptx_data1 =
         Ptx.tiles(ptx_stream1, ptx_info1) |> Ptx.tile_rows(ptx_info1) |> Ptx.image_data(ptx_info1)
+
+      ptx_palette = Ptx.get_palette(ptx_stream1, ptx_info1)
 
       ptx_stream2 = Stream.drop(stream, info.ptx2_offset)
       ptx_info2 = Ptx.parse_ptx(ptx_stream2)
@@ -159,7 +161,7 @@ defmodule Ptg do
         assemblies: assemblies,
         info: info,
         image_data: image_data,
-        palette: ptx_info1.palette
+        palette: ptx_palette
       }
     end
   end
