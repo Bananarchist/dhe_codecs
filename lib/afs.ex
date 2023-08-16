@@ -2,17 +2,13 @@ defmodule Afs do
 
   @magic_number << 0x41, 0x46, 0x53, 0x00 >>
 
-  def to_binary(list_of_binaries) do
-    Enum.reduce(list_of_binaries, fn x, acc -> acc <> x end)
-  end
-
   def parse_afs(stream) do
     << 
       magic_number::bitstring-size(32),
       file_count::little-integer-size(32) 
     >> = stream
       |> Stream.take(0x08)
-      |> to_binary
+      |> Enum.to_list |> :erlang.list_to_binary()
 
     IO.inspect(file_count)
     if magic_number != @magic_number do
@@ -29,7 +25,7 @@ defmodule Afs do
     >> = stream
       |> Stream.drop(0x08 + file_count * 0x08)
       |> Stream.take(0x08)
-      |> to_binary
+      |> Enum.to_list |> :erlang.list_to_binary()
     IO.inspect(file_names_offset)
 
     file_data = stream
@@ -57,7 +53,7 @@ defmodule Afs do
     <<
       data_offset::little-integer-size(32),
       data_run_length::little-integer-size(32)
-    >> = data |> to_binary
+    >> = data |> Enum.to_list |> :erlang.list_to_binary()
 
     %{
       data_offset: data_offset,
@@ -72,7 +68,7 @@ defmodule Afs do
       unknown2::little-integer-size(32),
       unknown3::little-integer-size(32),
       unknown4::little-integer-size(32)
-    >> = data |> to_binary
+    >> = data |> Enum.to_list |> :erlang.list_to_binary()
 
     %{
       file_name: file_name |> String.trim_trailing(<<0>>),
